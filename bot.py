@@ -452,15 +452,15 @@ async def fetch_sneaker_by_sku(sku: str) -> dict | None:
     if not api_key:
         return None
 
-    url = "https://sneaker-sku-database1.p.rapidapi.com/sku"
+    url = f"https://sneaker-sku-database1.p.rapidapi.com/sku/{sku}"
     headers = {
         "x-rapidapi-host": "sneaker-sku-database1.p.rapidapi.com",
         "x-rapidapi-key": api_key,
+        "Content-Type": "application/json",
     }
-    params = {"sku": sku}
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers, params=params) as resp:
+        async with session.get(url, headers=headers) as resp:
             if resp.status != 200:
                 return None
             data = await resp.json()
