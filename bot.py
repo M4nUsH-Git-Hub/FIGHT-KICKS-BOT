@@ -461,9 +461,17 @@ async def fetch_sneaker_by_sku(sku: str) -> dict | None:
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
+            print(f"[WTB] Status: {resp.status}")
+            text = await resp.text()
+            print(f"[WTB] Response: {text[:500]}")
             if resp.status != 200:
                 return None
-            data = await resp.json()
+            import json
+            try:
+                data = json.loads(text)
+            except Exception as e:
+                print(f"[WTB] JSON error: {e}")
+                return None
             if not data or not isinstance(data, list) or len(data) == 0:
                 return None
             product = data[0]
