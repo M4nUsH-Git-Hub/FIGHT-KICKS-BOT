@@ -449,6 +449,8 @@ async def fetch_sneaker_by_sku(sku: str) -> dict | None:
     """Cerca un prodotto tramite SKU su Sneaker SKU Database. Restituisce i dati o None."""
     import aiohttp
     api_key = os.environ.get("RAPIDAPI_KEY")
+    print(f"[WTB] API key presente: {bool(api_key)}")
+    print(f"[WTB] SKU richiesto: {sku}")
     if not api_key:
         return None
 
