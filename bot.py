@@ -1,16 +1,18 @@
 """
-Discord Ping Backup Bot
-=======================
+Discord Ping Backup Bot — PINGER ONLY
+======================================
 Archivia automaticamente tutti i messaggi con @everyone, @here o menzioni di ruolo
 inviati da owner, bot autorizzati e staff nel canale #ping-backup.
 
 Comandi slash:
-  /pingbackup setup    — imposta il canale di backup (crea o specifica)
-  /pingbackup addstaff — aggiunge un ruolo allo staff autorizzato
-  /pingbackup rmstaff  — rimuove un ruolo dallo staff
-  /pingbackup addbot   — aggiunge un bot alla whitelist
-  /pingbackup rmbot    — rimuove un bot dalla whitelist
-  /pingbackup config   — mostra la configurazione attuale
+  /pingbackup setup      — imposta il canale di backup
+  /pingbackup addstaff   — aggiunge un ruolo allo staff autorizzato
+  /pingbackup rmstaff    — rimuove un ruolo dallo staff
+  /pingbackup addbot     — aggiunge un bot alla whitelist
+  /pingbackup rmbot      — rimuove un bot dalla whitelist
+  /pingbackup addchannel — aggiunge un canale aperto (archivia ping di chiunque)
+  /pingbackup rmchannel  — rimuove un canale aperto
+  /pingbackup config     — mostra la configurazione attuale
 """
 
 import discord
@@ -59,14 +61,19 @@ def update_guild_config(guild_id: int, partial: dict):
     cfg = load_config()
     key = str(guild_id)
     if key not in cfg:
-        cfg[key] = {"backup_channel_id": None, "staff_role_ids": [], "allowed_bot_ids": []}
+        cfg[key] = {
+            "backup_channel_id": None,
+            "staff_role_ids": [],
+            "allowed_bot_ids": [],
+            "open_channel_ids": [],
+        }
     cfg[key].update(partial)
     save_config(cfg)
 
 
 # ── Setup intents ──────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
-intents.message_content = True  # privileged intent — da abilitare nel portale developer
+intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -76,43 +83,32 @@ tree = bot.tree
 # ── Utility ───────────────────────────────────────────────────────────────────
 
 def is_authorized(message: discord.Message, guild_cfg: dict) -> bool:
-    """Restituisce True se il mittente è autorizzato a far archiviare il ping."""
     author = message.author
     guild = message.guild
     if guild is None:
         return False
-
-    # Proprietario del server
     if author.id == guild.owner_id:
         return True
-
-    # Bot nella whitelist
     if author.bot and author.id in guild_cfg.get("allowed_bot_ids", []):
         return True
-
-    # Membro con ruolo staff autorizzato
     if isinstance(author, discord.Member):
         member_role_ids = {r.id for r in author.roles}
         if member_role_ids & set(guild_cfg.get("staff_role_ids", [])):
             return True
-
     return False
 
 
 def has_ping(message: discord.Message) -> bool:
-    """Restituisce True se il messaggio contiene @everyone, @here o una menzione di ruolo."""
     if message.mention_everyone:
         return True
     if message.role_mentions:
         return True
-    # Rileva menzioni di ruoli non menzionabili pubblicamente (<@&ID>)
     if re.search(r'<@&\d+>', message.content):
         return True
     return False
 
 
 def count_mentions_this_week(guild_id: int, role_label: str) -> int:
-    """Conta quante volte un ruolo è stato pingato negli ultimi 7 giorni."""
     cfg = load_config()
     key = str(guild_id)
     history = cfg.get(key, {}).get("mention_history", {})
@@ -123,7 +119,6 @@ def count_mentions_this_week(guild_id: int, role_label: str) -> int:
 
 
 def record_mention(guild_id: int, role_label: str):
-    """Registra un ping nel contatore settimanale."""
     cfg = load_config()
     key = str(guild_id)
     if key not in cfg:
@@ -135,18 +130,15 @@ def record_mention(guild_id: int, role_label: str):
         history[role_label] = []
     now = datetime.now(timezone.utc)
     history[role_label].append(now.timestamp())
-    # Pulizia: tieni solo gli ultimi 30 giorni
     week_ago = now.timestamp() - 30 * 24 * 3600
     history[role_label] = [t for t in history[role_label] if t >= week_ago]
     save_config(cfg)
 
 
 def build_embed(message: discord.Message) -> discord.Embed:
-    """Costruisce l'embed da inviare nel canale di backup."""
     author = message.author
     channel = message.channel
 
-    # Determina il tipo di ping
     ping_types = []
     if message.mention_everyone:
         if "@here" in message.content:
@@ -157,7 +149,6 @@ def build_embed(message: discord.Message) -> discord.Embed:
             ping_types.append("@everyone/@here")
     for role in message.role_mentions:
         ping_types.append(f"@{role.name}")
-    # Ruoli non menzionabili pubblicamente — rilevati tramite <@&ID>
     mentioned_role_ids = {r.id for r in message.role_mentions}
     for match in re.finditer(r'<@&(\d+)>', message.content):
         rid = int(match.group(1))
@@ -168,7 +159,6 @@ def build_embed(message: discord.Message) -> discord.Embed:
 
     ping_label = ", ".join(ping_types) if ping_types else "Role mention"
 
-    # Registra il ping e conta quante volte questa settimana
     record_mention(message.guild.id, ping_label)
     weekly_count = count_mentions_this_week(message.guild.id, ping_label)
 
@@ -185,12 +175,10 @@ def build_embed(message: discord.Message) -> discord.Embed:
     embed.add_field(name="Channel", value=channel.mention, inline=True)
     embed.add_field(name="Message", value=f"[Click here]({message.jump_url})", inline=True)
 
-    # Immagini — prima cerca negli allegati, poi negli embed (es. Discohook)
     images = [a for a in message.attachments if a.content_type and a.content_type.startswith("image/")]
     if images:
         embed.set_image(url=images[0].url)
     else:
-        # Cerca immagine negli embed del messaggio (Discohook e altri bot)
         for msg_embed in message.embeds:
             if msg_embed.image and msg_embed.image.url:
                 embed.set_image(url=msg_embed.image.url)
@@ -199,7 +187,6 @@ def build_embed(message: discord.Message) -> discord.Embed:
                 embed.set_image(url=msg_embed.thumbnail.url)
                 break
 
-    # Footer con solo il contatore settimanale — Discord aggiunge il timestamp automaticamente
     embed.set_footer(
         text=f"{weekly_count} | Mentions this week",
         icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
@@ -208,7 +195,7 @@ def build_embed(message: discord.Message) -> discord.Embed:
     return embed
 
 
-# ── Evento: on_message ─────────────────────────────────────────────────────────
+# ── Evento: on_ready ──────────────────────────────────────────────────────────
 
 @bot.event
 async def on_ready():
@@ -217,13 +204,12 @@ async def on_ready():
     print("Comandi slash sincronizzati globalmente.")
 
 
+# ── Evento: on_message ────────────────────────────────────────────────────────
+
 @bot.event
 async def on_message(message: discord.Message):
-    # Ignora i messaggi del bot stesso
     if message.author.id == bot.user.id:
         return
-
-    # Solo nei server
     if message.guild is None:
         return
 
@@ -231,20 +217,19 @@ async def on_message(message: discord.Message):
     backup_channel_id = guild_cfg.get("backup_channel_id")
 
     if not backup_channel_id:
-        return  # canale backup non configurato
+        return
 
     if not has_ping(message):
-        return  # nessun ping nel messaggio
+        return
 
-    # Canali aperti — archivia ping di chiunque
     open_channel_ids = guild_cfg.get("open_channel_ids", [])
     if message.channel.id not in open_channel_ids:
         if not is_authorized(message, guild_cfg):
-            return  # mittente non autorizzato
+            return
 
     backup_channel = message.guild.get_channel(backup_channel_id)
     if backup_channel is None:
-        return  # canale non trovato
+        return
 
     embed = build_embed(message)
     try:
@@ -252,7 +237,7 @@ async def on_message(message: discord.Message):
     except discord.Forbidden:
         print(f"⚠️  Permesso negato per inviare in #{backup_channel.name}")
     except discord.HTTPException as e:
-        print(f"⚠️  Errore HTTP durante l'invio dell'embed: {e}")
+        print(f"⚠️  Errore HTTP: {e}")
 
     await bot.process_commands(message)
 
@@ -268,18 +253,15 @@ ping_group = PingBackupGroup()
 
 
 @ping_group.command(name="setup", description="Imposta o crea il canale di backup per i ping")
-@app_commands.describe(canale="Canale esistente da usare (opzionale — ne crea uno nuovo se omesso)")
+@app_commands.describe(canale="Canale esistente da usare (opzionale)")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup(interaction: discord.Interaction, canale: discord.TextChannel = None):
     guild = interaction.guild
-
     if canale is None:
-        # Crea un nuovo canale #ping-backup
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(send_messages=False, read_messages=False),
             guild.me: discord.PermissionOverwrite(send_messages=True, read_messages=True),
         }
-        # Rende il canale visibile solo agli admin
         for role in guild.roles:
             if role.permissions.administrator:
                 overwrites[role] = discord.PermissionOverwrite(read_messages=True)
@@ -292,10 +274,7 @@ async def setup(interaction: discord.Interaction, canale: discord.TextChannel = 
 
     update_guild_config(guild.id, {"backup_channel_id": canale.id})
     await interaction.response.send_message(
-        f"✅ Canale di backup impostato su {canale.mention}.\n"
-        "Da ora tutti i ping da owner, staff e bot autorizzati verranno archiviati lì.",
-        ephemeral=True,
-    )
+        f"✅ Canale di backup impostato su {canale.mention}.", ephemeral=True)
 
 
 @ping_group.command(name="addstaff", description="Aggiunge un ruolo alla lista staff autorizzati")
@@ -326,7 +305,7 @@ async def rmstaff(interaction: discord.Interaction, ruolo: discord.Role):
     await interaction.response.send_message(f"✅ {ruolo.mention} rimosso dagli staff autorizzati.", ephemeral=True)
 
 
-@ping_group.command(name="addbot", description="Aggiunge un bot alla whitelist (inserisci l'ID)")
+@ping_group.command(name="addbot", description="Aggiunge un bot alla whitelist")
 @app_commands.describe(bot_id="ID numerico del bot da autorizzare")
 @app_commands.checks.has_permissions(administrator=True)
 async def addbot(interaction: discord.Interaction, bot_id: str):
@@ -402,9 +381,7 @@ async def config_cmd(interaction: discord.Interaction):
     ch_str = backup_ch.mention if backup_ch else "*(non impostato)*"
 
     staff_ids = cfg.get("staff_role_ids", [])
-    staff_str = (
-        ", ".join(f"<@&{r}>" for r in staff_ids) if staff_ids else "*(nessuno)*"
-    )
+    staff_str = ", ".join(f"<@&{r}>" for r in staff_ids) if staff_ids else "*(nessuno)*"
 
     bot_ids = cfg.get("allowed_bot_ids", [])
     bot_str = ", ".join(f"`{b}`" for b in bot_ids) if bot_ids else "*(nessuno)*"
@@ -417,130 +394,40 @@ async def config_cmd(interaction: discord.Interaction):
     embed.add_field(name="Ruoli staff autorizzati", value=staff_str, inline=False)
     embed.add_field(name="Bot nella whitelist", value=bot_str, inline=False)
     embed.add_field(name="Canali aperti", value=open_str, inline=False)
-    embed.set_footer(text=f"Owner del server: sempre autorizzato automaticamente")
+    embed.set_footer(text="Owner del server: sempre autorizzato automaticamente")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# Gestione errori permessi comandi slash
+# Gestione errori permessi
 @setup.error
 @addstaff.error
 @rmstaff.error
 @addbot.error
 @rmbot.error
+@addchannel.error
+@rmchannel.error
 @config_cmd.error
 async def admin_only_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
         await interaction.response.send_message("❌ Solo gli amministratori possono usare questo comando.", ephemeral=True)
 
 
-# Registra il gruppo
 tree.add_command(ping_group)
 
 
-# ── Comando WTB ───────────────────────────────────────────────────────────────
-
-WTB_CONTACT_ID = 734909407825100813
-WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"
-FOOTER_ICON = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
-
-
-async def fetch_sneaker_by_sku(sku: str) -> dict | None:
-    """Cerca un prodotto tramite SKU su Sneaker SKU Database. Restituisce i dati o None."""
-    import aiohttp
-    api_key = os.environ.get("RAPIDAPI_KEY")
-    print(f"[WTB] API key presente: {bool(api_key)}")
-    print(f"[WTB] SKU richiesto: {sku}")
-    if not api_key:
-        return None
-
-    url = f"https://sneaker-sku-database1.p.rapidapi.com/sku/{sku}"
-    headers = {
-        "x-rapidapi-host": "sneaker-sku-database1.p.rapidapi.com",
-        "x-rapidapi-key": api_key,
-        "Content-Type": "application/json",
-    }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as resp:
-            print(f"[WTB] Status: {resp.status}")
-            text = await resp.text()
-            print(f"[WTB] Response: {text[:500]}")
-            if resp.status != 200:
-                return None
-            import json
-            try:
-                data = json.loads(text)
-            except Exception as e:
-                print(f"[WTB] JSON error: {e}")
-                return None
-            if not data or not isinstance(data, list) or len(data) == 0:
-                return None
-            product = data[0]
-            return {
-                "name": product.get("name", "Prodotto sconosciuto"),
-                "image": product.get("thumbnail", ""),
-                "url": product.get("stockx_link", f"https://stockx.com/search?s={sku}"),
-            }
-
-
-@tree.command(name="wtb", description="Crea un annuncio WTB (Want To Buy) per una sneaker")
-@app_commands.describe(
-    sku="Codice SKU del prodotto (es. CW6999-600)",
-    taglia="Taglia EU (es. 44)",
-    canale="Canale dove inviare l'annuncio"
-)
-async def wtb(interaction: discord.Interaction, sku: str, taglia: str, canale: discord.TextChannel):
-    await interaction.response.defer(ephemeral=True)
-
-    product = await fetch_sneaker_by_sku(sku)
-
-    if product is None:
-        await interaction.followup.send("❌ Prodotto non trovato con questo SKU. Controlla e riprova.", ephemeral=True)
-        return
-
-    # Estrai dati dal prodotto
-    name = product.get("name", "Prodotto sconosciuto")
-    image_url = product.get("image", "")
-    stockx_url = product.get("url", f"https://stockx.com/search?s={sku}")
-
-    # Costruisci embed WTB
-    embed = discord.Embed(
-        title=f"{name} - {taglia}",
-        url=stockx_url,
-        color=discord.Color(0x6B6B6B),
-    )
-    embed.description = (
-        f"• {sku} – DSWT – YOUR OFFER\n"
-        f"• We are looking for the following items\n"
-        f"• Contact <@{WTB_CONTACT_ID}> privately via DM\n"
-        f"• [FIGHT KICKS OFFICIAL WTB SERVER]({WTB_SERVER_LINK})"
-    )
-
-    if image_url:
-        embed.set_image(url=image_url)
-
-    embed.set_footer(text="FIGHT KICKS – DAILY WTB", icon_url=FOOTER_ICON)
-
-    try:
-        await canale.send(embed=embed)
-        await interaction.followup.send(f"✅ Annuncio WTB inviato in {canale.mention}!", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.followup.send("❌ Non ho i permessi per inviare messaggi in quel canale.", ephemeral=True)
-
+# ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
 @bot.event
 async def on_disconnect():
     print("⚠️  Bot disconnesso — tentativo di riconnessione automatica...")
 
 
-# ── Avvio ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import time
     token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
         raise RuntimeError("Variabile d'ambiente DISCORD_BOT_TOKEN non impostata.")
-
     while True:
         try:
             bot.run(token)
