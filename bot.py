@@ -164,9 +164,10 @@ def build_embed(message: discord.Message) -> discord.Embed:
 
     ping_label_no_at = ping_label.replace("@", "")
     ping_label_spaced = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', ping_label_no_at)
+    ping_label_title = ping_label_spaced.capitalize()
 
     embed = discord.Embed(
-        title=f"New Mention : {ping_label_spaced}",
+        title=f"New mention : {ping_label_title}",
         color=discord.Color(0x6B6B6B),
         timestamp=message.created_at,
     )
