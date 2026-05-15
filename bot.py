@@ -203,7 +203,7 @@ def build_embed(message: discord.Message) -> discord.Embed:
                 break
 
     embed.set_footer(
-        text="Fight Kicks Pinger Recap",
+        text="Ping Fetcher",
         icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
     )
 
