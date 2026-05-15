@@ -182,6 +182,7 @@ def build_embed(message: discord.Message) -> discord.Embed:
     mention_str = ", ".join(mention_tags) if mention_tags else ping_label
 
     embed = discord.Embed(
+        title="New Ping Detected",
         color=discord.Color(0x6B6B6B),
         timestamp=message.created_at,
     )
