@@ -438,15 +438,13 @@ def is_link_allowed(url: str, antilink_cfg: dict) -> bool:
     return any(domain == a or domain.endswith("." + a) for a in allowed)
 
 
-DM_WARNING = """⚠️ **Your message was removed.**
+DM_WARNING = """⚠️ **Unauthorized Link Detected**
 
-Your message in **{server}** contained a link that is not authorized in that channel.
+This channel only allows verified links. If you believe your link should be permitted, please request access via our [Support Ticket](https://discord.com/channels/1383358337432813618/1416824721932161025)
 
-Only approved links from verified domains are permitted. Posting unauthorized links, including referral links, third-party listings, or external platforms, is not allowed without prior permission.
+Repeated violations will result in disciplinary action!
 
-If you believe this was a mistake or think you are entitled to post your link, please [open a support ticket](https://discord.com/channels/1383358337432813618/1416824721932161025) and our team will review your request.
-
-— *Fight Kicks Staff*"""
+*Fight Kicks Staff*"""
 
 
 @bot.event
