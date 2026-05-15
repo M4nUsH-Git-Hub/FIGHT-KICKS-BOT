@@ -162,12 +162,27 @@ def build_embed(message: discord.Message) -> discord.Embed:
     record_mention(message.guild.id, ping_label)
     weekly_count = count_mentions_this_week(message.guild.id, ping_label)
 
-    ping_label_no_at = ping_label.replace("@", "")
-    ping_label_spaced = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', ping_label_no_at)
-    ping_label_title = ping_label_spaced.capitalize()
+    # Costruisci la stringa delle menzioni cliccabili
+    mention_tags = []
+    if message.mention_everyone:
+        if "@here" in message.content:
+            mention_tags.append("@here")
+        if "@everyone" in message.content:
+            mention_tags.append("@everyone")
+        if not mention_tags:
+            mention_tags.append("@everyone")
+    for role in message.role_mentions:
+        mention_tags.append(role.mention)
+    mentioned_role_ids = {r.id for r in message.role_mentions}
+    for match in re.finditer(r'<@&(\d+)>', message.content):
+        rid = int(match.group(1))
+        if rid not in mentioned_role_ids:
+            mention_tags.append(f"<@&{rid}>")
+
+    mention_str = ", ".join(mention_tags) if mention_tags else ping_label
 
     embed = discord.Embed(
-        title=f"New mention : {ping_label_title}",
+        title=f"Pinged Role : {mention_str}",
         color=discord.Color(0x6B6B6B),
         timestamp=message.created_at,
     )
@@ -189,7 +204,6 @@ def build_embed(message: discord.Message) -> discord.Embed:
                 break
 
     embed.set_footer(
-        text=f"{weekly_count} | Mentions this week",
         icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
     )
 
