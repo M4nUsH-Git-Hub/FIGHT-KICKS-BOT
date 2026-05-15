@@ -396,8 +396,11 @@ tree.add_command(ping_group)
 
 # ── Anti-Link System ───────────────────────────────────────────────────────────
 
+# Canali dove l'anti-link è sempre attivo
+ANTILINK_CHANNEL_IDS = {1416322516481212516, 1467863886370701322}
+
 URL_REGEX = re.compile(
-    r'(https?://[^\s]+|www\.[^\s]+|[a-zA-Z0-9\-]+\.[a-zA-Z]{2,}(/[^\s]*)?)',
+    r'https?://[^\s]+|www\.[^\s]+',
     re.IGNORECASE
 )
 
@@ -413,10 +416,7 @@ def get_antilink_config(guild_id: int) -> dict:
     key = str(guild_id)
     guild_cfg = cfg.get(key, {})
     return guild_cfg.get("antilink", {
-        "enabled": False,
-        "channel_ids": [],
         "allowed_domains": [],
-        "blocked_domains": [],
     })
 
 
@@ -426,12 +426,7 @@ def update_antilink_config(guild_id: int, partial: dict):
     if key not in cfg:
         cfg[key] = {}
     if "antilink" not in cfg[key]:
-        cfg[key]["antilink"] = {
-            "enabled": False,
-            "channel_ids": [],
-            "allowed_domains": [],
-            "blocked_domains": [],
-        }
+        cfg[key]["antilink"] = {"allowed_domains": []}
     cfg[key]["antilink"].update(partial)
     save_config(cfg)
 
@@ -441,13 +436,6 @@ def is_link_allowed(url: str, antilink_cfg: dict) -> bool:
     domain = extract_domain(url)
     allowed = antilink_cfg.get("allowed_domains", [])
     return any(domain == a or domain.endswith("." + a) for a in allowed)
-
-
-def is_link_blocked(url: str, antilink_cfg: dict) -> bool:
-    """Restituisce True se il link è nella blacklist."""
-    domain = extract_domain(url)
-    blocked = antilink_cfg.get("blocked_domains", [])
-    return any(domain == b or domain.endswith("." + b) for b in blocked)
 
 
 DM_WARNING = """⚠️ **Your message was removed.**
@@ -471,9 +459,8 @@ async def on_message(message: discord.Message):
     guild_cfg = get_guild_config(message.guild.id)
 
     # ── Anti-link check ──
-    antilink_cfg = get_antilink_config(message.guild.id)
-    if antilink_cfg.get("enabled") and message.channel.id in antilink_cfg.get("channel_ids", []):
-        # Esenzione: admin, owner, staff, bot autorizzati
+    if message.channel.id in ANTILINK_CHANNEL_IDS:
+        antilink_cfg = get_antilink_config(message.guild.id)
         is_exempt = (
             message.author.id == message.guild.owner_id
             or message.author.guild_permissions.administrator
@@ -481,20 +468,16 @@ async def on_message(message: discord.Message):
             or (isinstance(message.author, discord.Member) and
                 {r.id for r in message.author.roles} & set(guild_cfg.get("staff_role_ids", [])))
         )
-
         if not is_exempt:
             urls = URL_REGEX.findall(message.content)
-            urls = [u[0] if isinstance(u, tuple) else u for u in urls]
             for url in urls:
-                if is_link_blocked(url, antilink_cfg) or not is_link_allowed(url, antilink_cfg):
+                if not is_link_allowed(url, antilink_cfg):
                     try:
                         await message.delete()
                     except discord.Forbidden:
-                        pass
+                        print("⚠️ Impossibile eliminare il messaggio — controlla i permessi del bot")
                     try:
-                        await message.author.send(
-                            DM_WARNING.format(server=message.guild.name)
-                        )
+                        await message.author.send(DM_WARNING.format(server=message.guild.name))
                     except discord.Forbidden:
                         pass
                     return
@@ -525,30 +508,6 @@ class AntiLinkGroup(app_commands.Group):
 antilink_group = AntiLinkGroup()
 
 
-@antilink_group.command(name="enable", description="Attiva l'anti-link in un canale")
-@app_commands.describe(canale="Canale dove attivare l'anti-link")
-@app_commands.checks.has_permissions(administrator=True)
-async def antilink_enable(interaction: discord.Interaction, canale: discord.TextChannel):
-    cfg = get_antilink_config(interaction.guild.id)
-    ids = cfg.get("channel_ids", [])
-    if canale.id not in ids:
-        ids.append(canale.id)
-    update_antilink_config(interaction.guild.id, {"enabled": True, "channel_ids": ids})
-    await interaction.response.send_message(f"✅ Anti-link attivato in {canale.mention}.", ephemeral=True)
-
-
-@antilink_group.command(name="disable", description="Disattiva l'anti-link in un canale")
-@app_commands.describe(canale="Canale dove disattivare l'anti-link")
-@app_commands.checks.has_permissions(administrator=True)
-async def antilink_disable(interaction: discord.Interaction, canale: discord.TextChannel):
-    cfg = get_antilink_config(interaction.guild.id)
-    ids = cfg.get("channel_ids", [])
-    if canale.id in ids:
-        ids.remove(canale.id)
-    update_antilink_config(interaction.guild.id, {"channel_ids": ids})
-    await interaction.response.send_message(f"✅ Anti-link disattivato in {canale.mention}.", ephemeral=True)
-
-
 @antilink_group.command(name="allow", description="Aggiunge un dominio alla whitelist")
 @app_commands.describe(dominio="Dominio da autorizzare (es. wtbmarketlist.eu)")
 @app_commands.checks.has_permissions(administrator=True)
@@ -562,21 +521,6 @@ async def antilink_allow(interaction: discord.Interaction, dominio: str):
     allowed.append(dominio)
     update_antilink_config(interaction.guild.id, {"allowed_domains": allowed})
     await interaction.response.send_message(f"✅ `{dominio}` aggiunto alla whitelist.", ephemeral=True)
-
-
-@antilink_group.command(name="block", description="Aggiunge un dominio alla blacklist")
-@app_commands.describe(dominio="Dominio da bloccare (es. nordicsneakers.dk)")
-@app_commands.checks.has_permissions(administrator=True)
-async def antilink_block(interaction: discord.Interaction, dominio: str):
-    dominio = dominio.lower().strip()
-    cfg = get_antilink_config(interaction.guild.id)
-    blocked = cfg.get("blocked_domains", [])
-    if dominio in blocked:
-        await interaction.response.send_message(f"ℹ️ `{dominio}` è già nella blacklist.", ephemeral=True)
-        return
-    blocked.append(dominio)
-    update_antilink_config(interaction.guild.id, {"blocked_domains": blocked})
-    await interaction.response.send_message(f"✅ `{dominio}` aggiunto alla blacklist.", ephemeral=True)
 
 
 @antilink_group.command(name="unallow", description="Rimuove un dominio dalla whitelist")
@@ -594,26 +538,20 @@ async def antilink_unallow(interaction: discord.Interaction, dominio: str):
     await interaction.response.send_message(f"✅ `{dominio}` rimosso dalla whitelist.", ephemeral=True)
 
 
-@antilink_group.command(name="config", description="Mostra la configurazione anti-link")
+@antilink_group.command(name="config", description="Mostra i domini autorizzati")
 @app_commands.checks.has_permissions(administrator=True)
 async def antilink_config(interaction: discord.Interaction):
     cfg = get_antilink_config(interaction.guild.id)
-    channels = ", ".join(f"<#{c}>" for c in cfg.get("channel_ids", [])) or "*(nessuno)*"
     allowed = ", ".join(f"`{d}`" for d in cfg.get("allowed_domains", [])) or "*(nessuno)*"
-    blocked = ", ".join(f"`{d}`" for d in cfg.get("blocked_domains", [])) or "*(nessuno)*"
+    channels = ", ".join(f"<#{c}>" for c in ANTILINK_CHANNEL_IDS)
 
     embed = discord.Embed(title="⚙️ Configurazione Anti-Link", color=discord.Color.blurple())
-    embed.add_field(name="Stato", value="✅ Attivo" if cfg.get("enabled") else "❌ Disattivo", inline=False)
     embed.add_field(name="Canali monitorati", value=channels, inline=False)
     embed.add_field(name="Domini whitelist", value=allowed, inline=False)
-    embed.add_field(name="Domini blacklist", value=blocked, inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@antilink_enable.error
-@antilink_disable.error
 @antilink_allow.error
-@antilink_block.error
 @antilink_unallow.error
 @antilink_config.error
 async def antilink_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
