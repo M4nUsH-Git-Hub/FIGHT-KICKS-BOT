@@ -182,12 +182,11 @@ def build_embed(message: discord.Message) -> discord.Embed:
     mention_str = ", ".join(mention_tags) if mention_tags else ping_label
 
     embed = discord.Embed(
-        title=f"Pinged Role : {mention_str}",
         color=discord.Color(0x6B6B6B),
         timestamp=message.created_at,
     )
 
-    embed.add_field(name="Author", value=author.mention, inline=True)
+    embed.add_field(name="Pinged Role", value=mention_str, inline=True)
     embed.add_field(name="Channel", value=channel.mention, inline=True)
     embed.add_field(name="Message", value=f"[Click here]({message.jump_url})", inline=True)
 
