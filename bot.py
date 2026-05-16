@@ -444,7 +444,7 @@ def is_link_allowed(url: str, antilink_cfg: dict) -> bool:
 
 DM_WARNING_WHITELIST = """⚠️ **Unauthorized Link Detected**
 
-This channel only allows verified links. If you believe your link should be permitted, please request access via our [Support Ticket](https://discord.com/channels/1383358337432813618/1416824721932161025)
+This link is not permitted in the [WTB Verified](https://discord.com/channels/1383358337432813618/1467863886370701322) channel. Only verified links from approved domains are allowed. If you believe your link should be permitted, please request access via our [Support Ticket](https://discord.com/channels/1383358337432813618/1416824721932161025)
 
 Repeated violations will result in disciplinary action!
 
@@ -452,7 +452,7 @@ Repeated violations will result in disciplinary action!
 
 DM_WARNING_STRICT = """⚠️ **Unauthorized Link Detected**
 
-Links are strictly not permitted in this channel. Please use text only.
+Links are strictly not permitted in the [Legit Check](https://discord.com/channels/1383358337432813618/1416322516481212516) channel. Please use text only.
 
 Repeated violations will result in disciplinary action!
 
