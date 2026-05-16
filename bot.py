@@ -396,8 +396,12 @@ tree.add_command(ping_group)
 
 # ── Anti-Link System ───────────────────────────────────────────────────────────
 
-# Canali dove l'anti-link è sempre attivo
-ANTILINK_CHANNEL_IDS = {1416322516481212516, 1467863886370701322}
+# Canale dove solo i domini whitelist sono permessi
+ANTILINK_WHITELIST_CHANNEL = 1467863886370701322
+# Canale dove nessun link è permesso
+ANTILINK_STRICT_CHANNEL = 1416322516481212516
+
+ANTILINK_CHANNEL_IDS = {ANTILINK_WHITELIST_CHANNEL, ANTILINK_STRICT_CHANNEL}
 
 URL_REGEX = re.compile(
     r'https?://[^\s]+|www\.[^\s]+',
@@ -438,9 +442,17 @@ def is_link_allowed(url: str, antilink_cfg: dict) -> bool:
     return any(domain == a or domain.endswith("." + a) for a in allowed)
 
 
-DM_WARNING = """⚠️ **Unauthorized Link Detected**
+DM_WARNING_WHITELIST = """⚠️ **Unauthorized Link Detected**
 
 This channel only allows verified links. If you believe your link should be permitted, please request access via our [Support Ticket](https://discord.com/channels/1383358337432813618/1416824721932161025)
+
+Repeated violations will result in disciplinary action!
+
+*Fight Kicks Staff*"""
+
+DM_WARNING_STRICT = """⚠️ **Unauthorized Link Detected**
+
+Links are strictly not permitted in this channel. Please use text only.
 
 Repeated violations will result in disciplinary action!
 
@@ -469,13 +481,25 @@ async def on_message(message: discord.Message):
         if not is_exempt:
             urls = URL_REGEX.findall(message.content)
             for url in urls:
-                if not is_link_allowed(url, antilink_cfg):
+                # Canale strict: nessun link ammesso
+                if message.channel.id == ANTILINK_STRICT_CHANNEL:
                     try:
                         await message.delete()
                     except discord.Forbidden:
                         print("⚠️ Impossibile eliminare il messaggio — controlla i permessi del bot")
                     try:
-                        await message.author.send(DM_WARNING.format(server=message.guild.name))
+                        await message.author.send(DM_WARNING_STRICT)
+                    except discord.Forbidden:
+                        pass
+                    return
+                # Canale whitelist: solo domini autorizzati
+                elif not is_link_allowed(url, antilink_cfg):
+                    try:
+                        await message.delete()
+                    except discord.Forbidden:
+                        print("⚠️ Impossibile eliminare il messaggio — controlla i permessi del bot")
+                    try:
+                        await message.author.send(DM_WARNING_WHITELIST)
                     except discord.Forbidden:
                         pass
                     return
