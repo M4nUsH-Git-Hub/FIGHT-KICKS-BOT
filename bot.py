@@ -584,6 +584,141 @@ async def antilink_error(interaction: discord.Interaction, error: app_commands.A
 tree.add_command(antilink_group)
 
 
+# ── Sistema notifiche partite in chiaro ───────────────────────────────────────
+
+SPORT_CHANNEL_ID = 1505567358507421737
+NOTIFY_HOUR = 8  # ora invio giornaliero (08:00)
+
+CANALI_TARGET = [
+    "como tv", "nove", "raiplay", "tv8", "canale 5",
+    "italia 1", "dazn free", "rai 1", "rai 2", "rai sport", "sportitalia"
+]
+
+FOOTER_ICON = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
+
+
+async def scrape_partite_chiaro() -> list:
+    """Scrapa diretta.it e restituisce le partite in chiaro del giorno."""
+    from playwright.async_api import async_playwright
+    from bs4 import BeautifulSoup
+
+    url = "https://www.diretta.it/calcio/"
+    risultati = []
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(4000)
+            content = await page.content()
+            await browser.close()
+
+        soup = BeautifulSoup(content, "html.parser")
+        tv_icons = soup.find_all(attrs={"aria-label": lambda v: v and "TV / Streaming" in v})
+
+        for icon in tv_icons:
+            aria = icon.get("aria-label", "")
+            canali_str = aria.replace("TV / Streaming Live: ", "").strip()
+
+            if not any(c in canali_str.lower() for c in CANALI_TARGET):
+                continue
+
+            row = icon.find_parent(class_="event__match")
+            if not row:
+                continue
+
+            a = row.find("a", class_="eventRowLink")
+            if not a:
+                continue
+
+            match_name = a.get("aria-label", "Partita sconosciuta")
+            link = a.get("href", "")
+
+            # Orario
+            time_el = row.find(class_=lambda c: c and "event__time" in c)
+            orario = time_el.get_text(strip=True) if time_el else "?"
+
+            # Competizione
+            competition = "?"
+            prev = row.find_previous_sibling()
+            for _ in range(20):
+                if prev is None:
+                    break
+                if prev.get("class") and "headerLeague__wrapper" in prev.get("class", []):
+                    title_el = prev.find(id=lambda i: i and "header-league-title" in i)
+                    if title_el:
+                        competition = title_el.get_text(strip=True)
+                    break
+                prev = prev.find_previous_sibling()
+
+            risultati.append({
+                "match": match_name,
+                "orario": orario,
+                "competition": competition,
+                "canali": canali_str,
+                "link": link
+            })
+
+    except Exception as e:
+        print(f"⚠️ Errore scraping diretta.it: {e}")
+
+    return risultati
+
+
+async def send_sport_notification():
+    """Invia l'embed delle partite in chiaro nel canale sport."""
+    channel = bot.get_channel(SPORT_CHANNEL_ID)
+    if not channel:
+        print("⚠️ Canale sport non trovato")
+        return
+
+    print("🔍 Scraping partite in chiaro...")
+    partite = await scrape_partite_chiaro()
+
+    if not partite:
+        print("ℹ️ Nessuna partita in chiaro oggi")
+        return
+
+    today = datetime.now(timezone.utc).strftime("%d/%m/%Y")
+
+    embed = discord.Embed(
+        title=f"📺 Free Matches Today — {today}",
+        description="Matches available for free on the following channels:",
+        color=discord.Color(0x6B6B6B),
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    for p in partite:
+        canali_puliti = p["canali"].replace(" (Ita)", "").replace(" (Ita.)", "")
+        value = f"🕐 **{p['orario']}** | 📡 {canali_puliti}\n[Watch on Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"⚽ {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    embed.set_footer(text="Ping Fetcher — Free Football", icon_url=FOOTER_ICON)
+
+    await channel.send(embed=embed)
+    print(f"✅ Notifiche sport inviate — {len(partite)} partite")
+
+
+async def daily_sport_loop():
+    """Loop giornaliero che invia le notifiche alle 08:00."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        now = datetime.now(timezone.utc)
+        # Calcola prossime 08:00 UTC (07:00 Italia inverno, 06:00 estate — aggiusta se serve)
+        target = now.replace(hour=NOTIFY_HOUR, minute=0, second=0, microsecond=0)
+        if now >= target:
+            target = target.replace(day=target.day + 1)
+        wait_seconds = (target - now).total_seconds()
+        print(f"⏰ Prossima notifica sport tra {int(wait_seconds//3600)}h {int((wait_seconds%3600)//60)}m")
+        await asyncio.sleep(wait_seconds)
+        await send_sport_notification()
+
+
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
 @bot.event
@@ -593,9 +728,18 @@ async def on_disconnect():
 
 if __name__ == "__main__":
     import time
+    import asyncio
     token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
         raise RuntimeError("Variabile d'ambiente DISCORD_BOT_TOKEN non impostata.")
+
+    @bot.event
+    async def on_ready():
+        await tree.sync()
+        print(f"✅ Bot online come {bot.user} (ID: {bot.user.id})")
+        print("Comandi slash sincronizzati globalmente.")
+        bot.loop.create_task(daily_sport_loop())
+
     while True:
         try:
             bot.run(token)
