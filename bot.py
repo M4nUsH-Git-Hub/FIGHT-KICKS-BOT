@@ -736,7 +736,7 @@ async def send_sport_notification():
 
     for p in partite:
         canali_formatted = format_canali(p["canali"])
-        value = f"🕐 **{p['orario']}** | {canali_formatted}\n[Check on Diretta.it]({p['link']})"
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
         embed.add_field(
             name=f"⚽ {p['match']} — {p['competition']}",
             value=value,
