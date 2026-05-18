@@ -681,6 +681,36 @@ async def scrape_partite_chiaro() -> list:
     return risultati
 
 
+CANALE_LINKS = {
+    "como tv": "https://tv.comofootball.com/",
+    "raiplay": "https://www.raiplay.it/",
+    "rai sport": "https://www.raiplay.it/dirette/raisport",
+    "nove": "https://nove.tv/",
+    "tv8": "https://www.tv8.it/streaming",
+    "sportitalia": "https://www.sportitalia.it/",
+    "rai 1": "https://www.raiplay.it/dirette/rai1",
+    "rai 2": "https://www.raiplay.it/dirette/rai2",
+    "canale 5": "https://www.mediasetplay.mediaset.it/diretta/canale5",
+    "italia 1": "https://www.mediasetplay.mediaset.it/diretta/italia1",
+    "dazn free": "https://www.dazn.com/",
+}
+
+
+def format_canali(canali_str: str) -> str:
+    """Formatta i canali come link cliccabili."""
+    canali_str = canali_str.replace(" (Ita)", "").replace(" (Ita.)", "")
+    canali_list = [c.strip() for c in canali_str.split(",")]
+    formatted = []
+    for c in canali_list:
+        key = c.lower()
+        url = next((v for k, v in CANALE_LINKS.items() if k in key), None)
+        if url:
+            formatted.append(f"[{c}]({url})")
+        else:
+            formatted.append(c)
+    return ", ".join(formatted)
+
+
 async def send_sport_notification():
     """Invia l'embed delle partite in chiaro nel canale sport."""
     channel = bot.get_channel(SPORT_CHANNEL_ID)
@@ -699,21 +729,21 @@ async def send_sport_notification():
 
     embed = discord.Embed(
         title=f"📺 Free Matches Today — {today}",
-        description="Matches available for free on the following channels:",
+        description="Matches available for free on the following channels",
         color=discord.Color(0x6B6B6B),
         timestamp=datetime.now(timezone.utc),
     )
 
     for p in partite:
-        canali_puliti = p["canali"].replace(" (Ita)", "").replace(" (Ita.)", "")
-        value = f"🕐 **{p['orario']}** | 📡 {canali_puliti}\n[Watch on Diretta.it]({p['link']})"
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n[Check on Diretta.it]({p['link']})"
         embed.add_field(
             name=f"⚽ {p['match']} — {p['competition']}",
             value=value,
             inline=False
         )
 
-    embed.set_footer(text="Ping Fetcher — Free Football", icon_url=FOOTER_ICON)
+    embed.set_footer(text="Football Matches", icon_url=FOOTER_ICON)
 
     await channel.send(embed=embed)
     print(f"✅ Notifiche sport inviate — {len(partite)} partite")
