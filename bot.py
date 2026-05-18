@@ -584,6 +584,21 @@ async def antilink_error(interaction: discord.Interaction, error: app_commands.A
 tree.add_command(antilink_group)
 
 
+# ── Comando test sport ────────────────────────────────────────────────────────
+
+@tree.command(name="sportnow", description="Invia subito le partite in chiaro di oggi (test)")
+@app_commands.checks.has_permissions(administrator=True)
+async def sportnow(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await send_sport_notification()
+    await interaction.followup.send("✅ Notifica sport inviata!", ephemeral=True)
+
+@sportnow.error
+async def sportnow_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("❌ Solo gli amministratori possono usare questo comando.", ephemeral=True)
+
+
 # ── Sistema notifiche partite in chiaro ───────────────────────────────────────
 
 SPORT_CHANNEL_ID = 1505567358507421737
