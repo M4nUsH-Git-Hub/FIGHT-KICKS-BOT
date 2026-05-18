@@ -729,9 +729,16 @@ async def on_disconnect():
 if __name__ == "__main__":
     import time
     import asyncio
+    import subprocess
     token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
         raise RuntimeError("Variabile d'ambiente DISCORD_BOT_TOKEN non impostata.")
+
+    # Installa Chromium automaticamente se non presente
+    print("🔧 Installazione Chromium...")
+    subprocess.run(["python", "-m", "playwright", "install", "chromium"], check=False)
+    subprocess.run(["python", "-m", "playwright", "install-deps", "chromium"], check=False)
+    print("✅ Chromium pronto")
 
     @bot.event
     async def on_ready():
