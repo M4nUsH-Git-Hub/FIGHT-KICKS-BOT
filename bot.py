@@ -606,18 +606,18 @@ NOTIFY_HOUR = 8  # ora invio giornaliero (08:00)
 
 CANALI_TARGET = [
     "como tv", "nove", "raiplay", "tv8", "canale 5",
-    "italia 1", "dazn free", "rai 1", "rai 2", "rai sport", "sportitalia"
+    "italia 1", "dazn free", "rai 1", "rai 2", "rai sport", "sportitalia",
+    "cielo", "lba tv", "lbatv"
 ]
 
 FOOTER_ICON = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
 
 
-async def scrape_partite_chiaro() -> list:
-    """Scrapa diretta.it e restituisce le partite in chiaro del giorno."""
+async def scrape_sport_chiaro(url: str) -> list:
+    """Scrapa diretta.it per un dato sport e restituisce le partite in chiaro."""
     from playwright.async_api import async_playwright
     from bs4 import BeautifulSoup
 
-    url = "https://www.diretta.it/calcio/"
     risultati = []
 
     try:
@@ -650,11 +650,9 @@ async def scrape_partite_chiaro() -> list:
             match_name = a.get("aria-label", "Partita sconosciuta")
             link = a.get("href", "")
 
-            # Orario
             time_el = row.find(class_=lambda c: c and "event__time" in c)
             orario = time_el.get_text(strip=True) if time_el else "?"
 
-            # Competizione
             competition = "?"
             prev = row.find_previous_sibling()
             for _ in range(20):
@@ -676,9 +674,34 @@ async def scrape_partite_chiaro() -> list:
             })
 
     except Exception as e:
-        print(f"⚠️ Errore scraping diretta.it: {e}")
+        print(f"⚠️ Errore scraping {url}: {e}")
 
     return risultati
+
+
+async def scrape_partite_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/calcio/")
+
+
+async def scrape_tennis_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/tennis/")
+
+
+async def scrape_f1_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/formula-1/")
+
+
+async def scrape_motogp_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/motogp/")
+
+
+async def scrape_basket_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/basket/")
+
+
+async def scrape_ciclismo_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/ciclismo/")
+
 
 
 CANALE_LINKS = {
@@ -693,6 +716,9 @@ CANALE_LINKS = {
     "canale 5": "https://www.mediasetplay.mediaset.it/diretta/canale5",
     "italia 1": "https://www.mediasetplay.mediaset.it/diretta/italia1",
     "dazn free": "https://www.dazn.com/",
+    "cielo": "https://www.cielotv.it/streaming",
+    "lba tv": "https://www.lbatv.com/",
+    "lbatv": "https://www.lbatv.com/",
 }
 
 
@@ -719,9 +745,14 @@ async def send_sport_notification():
         return
 
     print("🔍 Scraping partite in chiaro...")
-    partite = await scrape_partite_chiaro()
+    calcio = await scrape_partite_chiaro()
+    tennis = await scrape_tennis_chiaro()
+    f1 = await scrape_f1_chiaro()
+    motogp = await scrape_motogp_chiaro()
+    basket = await scrape_basket_chiaro()
+    ciclismo = await scrape_ciclismo_chiaro()
 
-    if not partite:
+    if not calcio and not tennis and not f1 and not motogp and not basket and not ciclismo:
         print("ℹ️ Nessuna partita in chiaro oggi")
         return
 
@@ -734,7 +765,7 @@ async def send_sport_notification():
         timestamp=datetime.now(timezone.utc),
     )
 
-    for p in partite:
+    for p in calcio:
         canali_formatted = format_canali(p["canali"])
         value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
         embed.add_field(
@@ -743,10 +774,54 @@ async def send_sport_notification():
             inline=False
         )
 
-    embed.set_footer(text="Football Matches", icon_url=FOOTER_ICON)
+    for p in tennis:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🎾 {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
 
+    for p in f1:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🏎️ {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    for p in motogp:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🏍️ {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    for p in basket:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🏀 {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    for p in ciclismo:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🚴 {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    embed.set_footer(text="Sport News", icon_url=FOOTER_ICON)
     await channel.send(embed=embed)
-    print(f"✅ Notifiche sport inviate — {len(partite)} partite")
+    print(f"✅ Inviate — {len(calcio)} calcio, {len(tennis)} tennis, {len(f1)} F1, {len(motogp)} MotoGP, {len(basket)} basket, {len(ciclismo)} ciclismo")
 
 
 async def daily_sport_loop():
