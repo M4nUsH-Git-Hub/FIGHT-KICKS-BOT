@@ -6,10 +6,6 @@ inviati da owner, bot autorizzati e staff nel canale #ping-backup.
 
 Comandi slash:
   /pingbackup setup      — imposta il canale di backup
-  /pingbackup addstaff   — aggiunge un ruolo allo staff autorizzato
-  /pingbackup rmstaff    — rimuove un ruolo dallo staff
-  /pingbackup addbot     — aggiunge un bot alla whitelist
-  /pingbackup rmbot      — rimuove un bot dalla whitelist
   /pingbackup addchannel — aggiunge un canale aperto (archivia ping di chiunque)
   /pingbackup rmchannel  — rimuove un canale aperto
   /pingbackup config     — mostra la configurazione attuale
@@ -255,71 +251,6 @@ async def setup(interaction: discord.Interaction, canale: discord.TextChannel = 
         f"✅ Canale di backup impostato su {canale.mention}.", ephemeral=True)
 
 
-@ping_group.command(name="addstaff", description="Aggiunge un ruolo alla lista staff autorizzati")
-@app_commands.describe(ruolo="Ruolo da autorizzare")
-@app_commands.checks.has_permissions(administrator=True)
-async def addstaff(interaction: discord.Interaction, ruolo: discord.Role):
-    cfg = get_guild_config(interaction.guild.id)
-    ids: list = cfg.get("staff_role_ids", [])
-    if ruolo.id in ids:
-        await interaction.response.send_message(f"ℹ️ {ruolo.mention} è già autorizzato.", ephemeral=True)
-        return
-    ids.append(ruolo.id)
-    update_guild_config(interaction.guild.id, {"staff_role_ids": ids})
-    await interaction.response.send_message(f"✅ {ruolo.mention} aggiunto agli staff autorizzati.", ephemeral=True)
-
-
-@ping_group.command(name="rmstaff", description="Rimuove un ruolo dalla lista staff autorizzati")
-@app_commands.describe(ruolo="Ruolo da rimuovere")
-@app_commands.checks.has_permissions(administrator=True)
-async def rmstaff(interaction: discord.Interaction, ruolo: discord.Role):
-    cfg = get_guild_config(interaction.guild.id)
-    ids: list = cfg.get("staff_role_ids", [])
-    if ruolo.id not in ids:
-        await interaction.response.send_message(f"ℹ️ {ruolo.mention} non era nella lista.", ephemeral=True)
-        return
-    ids.remove(ruolo.id)
-    update_guild_config(interaction.guild.id, {"staff_role_ids": ids})
-    await interaction.response.send_message(f"✅ {ruolo.mention} rimosso dagli staff autorizzati.", ephemeral=True)
-
-
-@ping_group.command(name="addbot", description="Aggiunge un bot alla whitelist")
-@app_commands.describe(bot_id="ID numerico del bot da autorizzare")
-@app_commands.checks.has_permissions(administrator=True)
-async def addbot(interaction: discord.Interaction, bot_id: str):
-    try:
-        bid = int(bot_id)
-    except ValueError:
-        await interaction.response.send_message("❌ Inserisci un ID numerico valido.", ephemeral=True)
-        return
-    cfg = get_guild_config(interaction.guild.id)
-    ids: list = cfg.get("allowed_bot_ids", [])
-    if bid in ids:
-        await interaction.response.send_message("ℹ️ Bot già nella whitelist.", ephemeral=True)
-        return
-    ids.append(bid)
-    update_guild_config(interaction.guild.id, {"allowed_bot_ids": ids})
-    await interaction.response.send_message(f"✅ Bot `{bid}` aggiunto alla whitelist.", ephemeral=True)
-
-
-@ping_group.command(name="rmbot", description="Rimuove un bot dalla whitelist")
-@app_commands.describe(bot_id="ID numerico del bot da rimuovere")
-@app_commands.checks.has_permissions(administrator=True)
-async def rmbot(interaction: discord.Interaction, bot_id: str):
-    try:
-        bid = int(bot_id)
-    except ValueError:
-        await interaction.response.send_message("❌ Inserisci un ID numerico valido.", ephemeral=True)
-        return
-    cfg = get_guild_config(interaction.guild.id)
-    ids: list = cfg.get("allowed_bot_ids", [])
-    if bid not in ids:
-        await interaction.response.send_message("ℹ️ Bot non trovato nella whitelist.", ephemeral=True)
-        return
-    ids.remove(bid)
-    update_guild_config(interaction.guild.id, {"allowed_bot_ids": ids})
-    await interaction.response.send_message(f"✅ Bot `{bid}` rimosso dalla whitelist.", ephemeral=True)
-
 
 @ping_group.command(name="addchannel", description="Aggiunge un canale aperto — archivia ping di chiunque")
 @app_commands.describe(canale="Canale da aggiungere")
@@ -358,19 +289,12 @@ async def config_cmd(interaction: discord.Interaction):
     backup_ch = guild.get_channel(cfg.get("backup_channel_id") or 0)
     ch_str = backup_ch.mention if backup_ch else "*(non impostato)*"
 
-    staff_ids = cfg.get("staff_role_ids", [])
-    staff_str = ", ".join(f"<@&{r}>" for r in staff_ids) if staff_ids else "*(nessuno)*"
-
-    bot_ids = cfg.get("allowed_bot_ids", [])
-    bot_str = ", ".join(f"`{b}`" for b in bot_ids) if bot_ids else "*(nessuno)*"
 
     open_ids = cfg.get("open_channel_ids", [])
     open_str = ", ".join(f"<#{c}>" for c in open_ids) if open_ids else "*(nessuno)*"
 
     embed = discord.Embed(title="⚙️ Configurazione Ping Backup", color=discord.Color.blurple())
     embed.add_field(name="Canale backup", value=ch_str, inline=False)
-    embed.add_field(name="Ruoli staff autorizzati", value=staff_str, inline=False)
-    embed.add_field(name="Bot nella whitelist", value=bot_str, inline=False)
     embed.add_field(name="Canali aperti", value=open_str, inline=False)
     embed.set_footer(text="Owner del server: sempre autorizzato automaticamente")
 
@@ -379,10 +303,6 @@ async def config_cmd(interaction: discord.Interaction):
 
 # Gestione errori permessi
 @setup.error
-@addstaff.error
-@rmstaff.error
-@addbot.error
-@rmbot.error
 @addchannel.error
 @rmchannel.error
 @config_cmd.error
@@ -623,23 +543,52 @@ async def scrape_sport_chiaro(url: str) -> list:
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
             await page.goto(url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(4000)
+            await page.wait_for_timeout(5000)
             content = await page.content()
             await browser.close()
 
         soup = BeautifulSoup(content, "html.parser")
-        tv_icons = soup.find_all(attrs={"aria-label": lambda v: v and "TV / Streaming" in v})
 
-        for icon in tv_icons:
-            aria = icon.get("aria-label", "")
-            canali_str = aria.replace("TV / Streaming Live: ", "").strip()
+        # Nuova struttura: trova tutti i blocchi "Canale TV" tramite data-testid
+        tv_labels = soup.find_all(attrs={"data-testid": "wcl-scores-overline-02"})
 
-            if not any(c in canali_str.lower() for c in CANALI_TARGET):
+        for label in tv_labels:
+            if "Canale TV" not in label.get_text():
                 continue
 
-            row = icon.find_parent(class_="event__match")
+            # Il contenitore dei canali è il fratello successivo (wcl-links)
+            canali_container = label.find_next_sibling(class_=lambda c: c and "wcl-links" in " ".join(c))
+            if not canali_container:
+                # prova col genitore
+                parent = label.parent
+                canali_container = parent.find(class_=lambda c: c and "wcl-links" in " ".join(c)) if parent else None
+
+            if not canali_container:
+                continue
+
+            # Estrai i nomi dei canali dai link tv
+            canale_links = canali_container.find_all("a", class_=lambda c: c and "wcl-tvStationLink" in " ".join(c))
+            if not canale_links:
+                continue
+
+            # Filtra solo canali in chiaro
+            canali_trovati = []
+            for a_ch in canale_links:
+                nome = a_ch.get("title", "") or a_ch.get_text(strip=True)
+                href = a_ch.get("href", "")
+                if any(c in nome.lower() for c in CANALI_TARGET):
+                    canali_trovati.append({"nome": nome, "href": href})
+
+            if not canali_trovati:
+                continue
+
+            # Risali al row della partita
+            row = label.find_parent(class_="event__match")
             if not row:
                 continue
 
@@ -664,6 +613,12 @@ async def scrape_sport_chiaro(url: str) -> list:
                         competition = title_el.get_text(strip=True)
                     break
                 prev = prev.find_previous_sibling()
+
+            # Costruisci stringa canali con link diretti presi dal sito
+            canali_str = ", ".join(
+                f"[{c['nome']}]({c['href']})" if c['href'] else c['nome']
+                for c in canali_trovati
+            )
 
             risultati.append({
                 "match": match_name,
@@ -723,18 +678,8 @@ CANALE_LINKS = {
 
 
 def format_canali(canali_str: str) -> str:
-    """Formatta i canali come link cliccabili."""
-    canali_str = canali_str.replace(" (Ita)", "").replace(" (Ita.)", "")
-    canali_list = [c.strip() for c in canali_str.split(",")]
-    formatted = []
-    for c in canali_list:
-        key = c.lower()
-        url = next((v for k, v in CANALE_LINKS.items() if k in key), None)
-        if url:
-            formatted.append(f"[{c}]({url})")
-        else:
-            formatted.append(c)
-    return ", ".join(formatted)
+    """I canali arrivano già formattati con link dal sito, restituisce la stringa così com'è."""
+    return canali_str
 
 
 async def send_sport_notification():
