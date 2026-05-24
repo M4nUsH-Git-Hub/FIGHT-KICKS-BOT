@@ -891,7 +891,7 @@ async def wtb(
         color=discord.Color(0x575553),
     )
     embed.description = (
-        f"- {codice} – {condizione} – YOUR OFFER\n"
+        f"- {codice} – {condizione} – [STOCKX]({link if link else 'https://stockx.com'})\n"
         f"- Contact {interaction.user.mention} privately via DM\n"
         f"- [FIGHT KICKS OFFICIAL WTB SERVER]({WTB_SERVER_LINK})"
     )
