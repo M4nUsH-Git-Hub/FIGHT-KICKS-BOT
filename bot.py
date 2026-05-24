@@ -806,6 +806,7 @@ async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
     import urllib.parse
 
     headers = {
+        "Authorization": f"Bearer {KICKSDB_API_KEY}",
         "x-api-key": KICKSDB_API_KEY,
         "Accept": "application/json",
     }
