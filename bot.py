@@ -881,15 +881,20 @@ async def wtb(
         await interaction.followup.send("❌ Canale wtb-monitor non trovato. Controlla WTB_CHANNEL_ID.", ephemeral=True)
         return
 
+    # Titolo con link StockX se disponibile
+    title_str = f"{scarpa} - {taglia}"
+    url_str = link if link else None
+
     embed = discord.Embed(
-        title=f"{scarpa} - {taglia}",
-        color=discord.Color(0x1a73e8),
+        title=title_str,
+        url=url_str,
+        color=discord.Color(0x575553),
     )
     embed.add_field(name="\u200b", value=(
-        f"• {codice} – {condizione} – YOUR OFFER\n"
-        f"• We are looking for the following items\n"
-        f"• Contact {interaction.user.mention} privately via DM\n"
-        f"• [FIGHT KICKS OFFICIAL WTB SERVER]({WTB_SERVER_LINK})"
+        f"- {codice} – {condizione} – YOUR OFFER\n"
+        f"- We are looking for the following items\n"
+        f"- Contact {interaction.user.mention} privately via DM\n"
+        f"- [FIGHT KICKS OFFICIAL WTB SERVER]({WTB_SERVER_LINK})"
     ), inline=False)
 
     if img_url:
