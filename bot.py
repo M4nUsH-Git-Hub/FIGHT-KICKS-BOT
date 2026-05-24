@@ -794,65 +794,62 @@ FOOTER_ICON_WTB = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/
 WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il link reale
 
 
-async def fetch_stockx_image(url: str):
-    """Prende l'immagine del prodotto da una pagina StockX."""
+
+async def fetch_image_for_sneaker(scarpa: str, link: str = None) -> str | None:
+    """
+    Cerca l'immagine della scarpa.
+    Prima prova con l'API JSON di Google Images (nessun browser),
+    poi prova con Bing Images come fallback.
+    """
+    import aiohttp
+    import urllib.parse
+
+    query = f"{scarpa} StockX"
+    encoded = urllib.parse.quote(query)
+
+    # ── Tentativo 1: Google Images scrape leggero via aiohttp ──
     try:
-        from playwright.async_api import async_playwright
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            page = await context.new_page()
-            await page.goto(url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(3000)
-            selectors = [
-                'img[data-testid="product-image"]',
-                'img.css-1rv5lcm',
-                'picture img',
-                'img[alt*="StockX"]',
-            ]
-            img_url = None
-            for sel in selectors:
-                el = await page.query_selector(sel)
-                if el:
-                    src = await el.get_attribute("src")
-                    if src and src.startswith("http"):
-                        img_url = src
-                        break
-            await browser.close()
-            return img_url
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        url = f"https://www.google.com/search?q={encoded}&tbm=isch&hl=en"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                text = await resp.text()
+
+        # Estrai URL immagini dal JSON incorporato nella pagina
+        import re
+        # Google embeds image URLs in AF_initDataCallback blocks
+        matches = re.findall(r'"(https://[^"]+\.(?:jpg|jpeg|png|webp))"', text)
+        # Filtra thumbnail piccole e domini Google
+        for m in matches:
+            if "encrypted-tbn" not in m and "gstatic" not in m and len(m) > 60:
+                print(f"✅ Immagine trovata via Google: {m[:80]}")
+                return m
     except Exception as e:
-        print(f"⚠️ Errore fetch StockX image: {e}")
-        return None
+        print(f"⚠️ Google Images aiohttp fallito: {e}")
 
-
-async def fetch_google_image(query: str):
-    """Cerca su Google Images e restituisce il primo risultato immagine."""
+    # ── Tentativo 2: Bing Images ──
     try:
-        from playwright.async_api import async_playwright
-        search_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            page = await context.new_page()
-            await page.goto(search_url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(2000)
-            imgs = await page.query_selector_all("img")
-            img_url = None
-            for img in imgs[1:]:
-                src = await img.get_attribute("src")
-                if src and src.startswith("http") and "gstatic" not in src:
-                    img_url = src
-                    break
-            await browser.close()
-            return img_url
-    except Exception as e:
-        print(f"⚠️ Errore Google Images: {e}")
-        return None
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+        url = f"https://www.bing.com/images/search?q={encoded}&form=HDRSC2"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                text = await resp.text()
 
+        import re
+        matches = re.findall(r'murl&quot;:&quot;(https://[^&]+\.(?:jpg|jpeg|png|webp))&quot;', text)
+        if matches:
+            print(f"✅ Immagine trovata via Bing: {matches[0][:80]}")
+            return matches[0]
+    except Exception as e:
+        print(f"⚠️ Bing Images fallito: {e}")
+
+    print("❌ Nessuna immagine trovata")
+    return None
 
 @tree.command(name="wtb", description="Posta un annuncio WTB nel canale wtb-monitor")
 @app_commands.describe(
@@ -876,15 +873,8 @@ async def wtb(
 
     await interaction.response.defer(ephemeral=True)
 
-    # Cerca immagine — prima StockX, poi Google fallback
-    img_url = None
-    if link:
-        print(f"🔍 Fetching immagine da StockX: {link}")
-        img_url = await fetch_stockx_image(link)
-    if not img_url:
-        query = f"{scarpa} StockX"
-        print(f"🔍 Fallback Google Images: {query}")
-        img_url = await fetch_google_image(query)
+    print(f"🔍 Cercando immagine per: {scarpa}")
+    img_url = await fetch_image_for_sneaker(scarpa, link)
 
     channel = interaction.guild.get_channel(WTB_CHANNEL_ID)
     if not channel:
