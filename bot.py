@@ -795,80 +795,51 @@ WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il l
 
 
 
-async def fetch_stockx_product(link: str) -> dict:
+async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
     """
-    Estrae nome, codice stile e immagine dalla pagina StockX via Playwright.
-    Attende il caricamento JS prima di leggere __NEXT_DATA__.
+    Cerca immagine su Bing con query nome + codice + StockX.
+    Molto preciso grazie al codice SKU univoco.
     """
-    from playwright.async_api import async_playwright
-    import json
+    import aiohttp
     import re
+    import urllib.parse
 
-    result = {"name": None, "style_code": None, "image_url": None}
+    query = f"{nome} {codice} StockX"
+    encoded = urllib.parse.quote(query)
 
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                locale="en-US",
-            )
-            page = await context.new_page()
-            await page.goto(link, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(3000)
-            content = await page.content()
-            await browser.close()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+        url = f"https://www.bing.com/images/search?q={encoded}&form=HDRSC2"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                text = await resp.text()
 
-        # Leggi __NEXT_DATA__
-        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', content, re.DOTALL)
-        if match:
-            data = json.loads(match.group(1))
-            props = data.get("props", {}).get("pageProps", {})
-            product = props.get("product", props.get("data", {}).get("product", {}))
-            if product:
-                result["name"] = product.get("title") or product.get("name")
-                result["style_code"] = product.get("styleId") or product.get("styleCode")
-                result["image_url"] = (
-                    product.get("media", {}).get("imageUrl") or
-                    product.get("media", {}).get("smallImageUrl") or
-                    product.get("imageUrl")
-                )
-                print(f"✅ Dati da __NEXT_DATA__: {result}")
-
-        # Fallback og: tags
-        if not result["name"]:
-            og_title = re.search(r'<meta property="og:title" content="([^"]+)"', content)
-            if og_title:
-                raw = og_title.group(1)
-                result["name"] = re.sub(r' \| StockX.*', '', raw).replace("Buy and Sell ", "").strip()
-
-        if not result["image_url"]:
-            og_img = re.search(r'<meta property="og:image" content="([^"]+)"', content)
-            if og_img:
-                result["image_url"] = og_img.group(1)
-
-        if not result["style_code"]:
-            sc = re.search(r'"styleId":"([^"]+)"', content)
-            if sc:
-                result["style_code"] = sc.group(1)
-
-        print(f"📦 StockX result finale: {result}")
-
+        matches = re.findall(r'murl&quot;:&quot;(https://[^&]+\.(?:jpg|jpeg|png|webp))&quot;', text)
+        if matches:
+            print(f"✅ Immagine trovata: {matches[0][:80]}")
+            return matches[0]
     except Exception as e:
-        print(f"⚠️ StockX Playwright fetch fallito: {e}")
+        print(f"⚠️ Bing Images fallito: {e}")
 
-    return result
+    print("❌ Nessuna immagine trovata")
+    return None
 
-@tree.command(name="wtb", description="Posta un annuncio WTB — basta il link StockX e la taglia")
+@tree.command(name="wtb", description="Posta un annuncio WTB nel canale wtb-monitor")
 @app_commands.describe(
-    link="Link StockX del prodotto",
+    nome="Nome del prodotto (es. Air Jordan 4 Retro OG SP Nigel Sylvester)",
     taglia="Taglia EU (es. 43 1/3)",
+    codice="Codice SKU (es. HF4340-800)",
+    link="Link StockX del prodotto",
     condizione="Condizione (default: DSWT)",
 )
 async def wtb(
     interaction: discord.Interaction,
-    link: str,
+    nome: str,
     taglia: str,
+    codice: str,
+    link: str,
     condizione: str = "DSWT",
 ):
     if interaction.user.id != interaction.guild.owner_id:
@@ -877,12 +848,8 @@ async def wtb(
 
     await interaction.response.defer(ephemeral=True)
 
-    print(f"🔍 Fetching dati StockX: {link}")
-    product = await fetch_stockx_product(link)
-
-    nome = product["name"] or "Prodotto StockX"
-    codice = product["style_code"] or "N/A"
-    img_url = product["image_url"]
+    print(f"🔍 Cercando immagine: {nome} {codice}")
+    img_url = await fetch_sneaker_image(nome, codice)
 
     channel = interaction.guild.get_channel(WTB_CHANNEL_ID)
     if not channel:
@@ -906,7 +873,7 @@ async def wtb(
 
     await channel.send(embed=embed)
     await interaction.followup.send(f"✅ WTB inviato — {nome} {taglia}", ephemeral=True)
-    print(f"✅ WTB inviato — {nome} | codice:{codice} | img:{'✅' if img_url else '❌'}")
+    print(f"✅ WTB inviato — {nome} | img:{'✅' if img_url else '❌'}")
 
 
 @wtb.error
