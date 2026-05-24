@@ -797,9 +797,8 @@ WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il l
 
 async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
     """
-    Cerca immagine su Bing con query nome + codice + StockX.
-    Estrae sia l'immagine che la pagina sorgente dal JSON embedded di Bing.
-    Priorità a domini affidabili: stockx, goat, flightclub, kickscrew.
+    Cerca immagine tramite API GOAT (cerca per SKU, poi per nome).
+    Fallback: Bing Images con blacklist siti stock photography.
     """
     import aiohttp
     import re
@@ -807,13 +806,42 @@ async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
     import html
     import urllib.parse
 
-    PREFERRED_DOMAINS = ["stockx.com", "goat.com", "flightclub.com", "kickscrew.com", "solestage.com"]
-    BLACKLIST = ["dreamstime.com", "shutterstock.com", "gettyimages", "alamy.com", "istockphoto"]
+    # ── Tentativo 1: GOAT API ──
+    try:
+        headers = {
+            "User-Agent": "GOAT/2.67.0 (iPhone; iOS 16.0; Scale/3.00)",
+            "x-goat-app": "goat",
+        }
+        # Cerca prima per codice SKU (molto preciso)
+        for query in [codice, nome]:
+            encoded = urllib.parse.quote(query)
+            url = f"https://www.goat.com/api/v1/product_templates/search?query={encoded}&count=1"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        products = data.get("productTemplates", [])
+                        if products:
+                            img = (
+                                products[0].get("pictureUrl") or
+                                products[0].get("mainPictureUrl") or
+                                products[0].get("gridPictureUrl")
+                            )
+                            if img:
+                                # GOAT usa URL con {width} placeholder
+                                img = img.replace("{width}", "900")
+                                print(f"✅ Immagine GOAT trovata ({query}): {img[:80]}")
+                                return img
+    except Exception as e:
+        print(f"⚠️ GOAT API fallito: {e}")
 
-    query = f"{nome} {codice} StockX"
-    encoded = urllib.parse.quote(query)
+    # ── Tentativo 2: Bing Images con blacklist ──
+    BLACKLIST = ["dreamstime.com", "shutterstock.com", "gettyimages", "alamy.com", "istockphoto", "adobe.com"]
+    PREFERRED_DOMAINS = ["stockx.com", "goat.com", "flightclub.com", "kickscrew.com"]
 
     try:
+        query = f"{nome} {codice} StockX"
+        encoded = urllib.parse.quote(query)
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
@@ -823,11 +851,8 @@ async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 text = await resp.text()
 
-        # Bing mette i dati immagine in blocchi JSON con m= attribute
-        # Format: <a ... m="{&quot;murl&quot;:&quot;IMG_URL&quot;,&quot;purl&quot;:&quot;PAGE_URL&quot;...}"
         raw_blocks = re.findall(r' m=\"({[^"]+})\"', text)
         if not raw_blocks:
-            # Prova formato alternativo
             raw_blocks = re.findall(r'm=&quot;({.*?})&quot;', text)
 
         items = []
@@ -842,24 +867,20 @@ async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
             except Exception:
                 continue
 
-        print(f"  🔎 Trovate {len(items)} immagini Bing con sorgente")
-
-        # Filtra blacklist
         items = [(img, page) for img, page in items if not any(b in img for b in BLACKLIST)]
+        print(f"  🔎 Bing: {len(items)} immagini dopo blacklist")
 
-        # Prima passa: domini preferiti
         for img_url, page_url in items:
             if any(d in page_url for d in PREFERRED_DOMAINS):
-                print(f"✅ Immagine da dominio preferito ({page_url[:60]})")
+                print(f"✅ Bing dominio preferito: {img_url[:80]}")
                 return img_url
 
-        # Seconda passa: prima immagine non in blacklist
         if items:
-            print(f"✅ Immagine fallback: {items[0][0][:80]}")
+            print(f"✅ Bing fallback: {items[0][0][:80]}")
             return items[0][0]
 
     except Exception as e:
-        print(f"⚠️ Bing Images fallito: {e}")
+        print(f"⚠️ Bing fallito: {e}")
 
     print("❌ Nessuna immagine trovata")
     return None
