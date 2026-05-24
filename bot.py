@@ -797,41 +797,56 @@ WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il l
 
 async def fetch_image_for_sneaker(scarpa: str, link: str = None) -> str | None:
     """
-    Cerca l'immagine della scarpa.
-    Prima prova con l'API JSON di Google Images (nessun browser),
-    poi prova con Bing Images come fallback.
+    Estrae l'immagine dalla pagina StockX tramite __NEXT_DATA__ JSON.
+    Fallback: Bing Images.
     """
     import aiohttp
-    import urllib.parse
+    import json
+    import re
 
-    query = f"{scarpa} StockX"
-    encoded = urllib.parse.quote(query)
+    # ── Tentativo 1: StockX __NEXT_DATA__ ──
+    if link:
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.get(link, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    text = await resp.text()
 
-    # ── Tentativo 1: Google Images scrape leggero via aiohttp ──
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-        url = f"https://www.google.com/search?q={encoded}&tbm=isch&hl=en"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                text = await resp.text()
+            # StockX embeds product data in __NEXT_DATA__
+            match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', text, re.DOTALL)
+            if match:
+                data = json.loads(match.group(1))
+                # Naviga nel JSON per trovare l'immagine
+                props = data.get("props", {}).get("pageProps", {})
+                product = props.get("product", props.get("data", {}).get("product", {}))
+                img = (
+                    product.get("media", {}).get("imageUrl") or
+                    product.get("media", {}).get("smallImageUrl") or
+                    product.get("imageUrl")
+                )
+                if img:
+                    print(f"✅ Immagine StockX trovata: {img[:80]}")
+                    return img
 
-        # Estrai URL immagini dal JSON incorporato nella pagina
-        import re
-        # Google embeds image URLs in AF_initDataCallback blocks
-        matches = re.findall(r'"(https://[^"]+\.(?:jpg|jpeg|png|webp))"', text)
-        # Filtra thumbnail piccole e domini Google
-        for m in matches:
-            if "encrypted-tbn" not in m and "gstatic" not in m and len(m) > 60:
-                print(f"✅ Immagine trovata via Google: {m[:80]}")
-                return m
-    except Exception as e:
-        print(f"⚠️ Google Images aiohttp fallito: {e}")
+            # Fallback: cerca og:image nel meta tag
+            og = re.search(r'<meta property="og:image" content="([^"]+)"', text)
+            if og:
+                img = og.group(1)
+                print(f"✅ Immagine og:image trovata: {img[:80]}")
+                return img
+
+        except Exception as e:
+            print(f"⚠️ StockX fetch fallito: {e}")
 
     # ── Tentativo 2: Bing Images ──
     try:
+        import urllib.parse
+        query = f"{scarpa} StockX"
+        encoded = urllib.parse.quote(query)
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
@@ -840,11 +855,13 @@ async def fetch_image_for_sneaker(scarpa: str, link: str = None) -> str | None:
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 text = await resp.text()
 
-        import re
         matches = re.findall(r'murl&quot;:&quot;(https://[^&]+\.(?:jpg|jpeg|png|webp))&quot;', text)
-        if matches:
-            print(f"✅ Immagine trovata via Bing: {matches[0][:80]}")
-            return matches[0]
+        # Filtra immagini StockX/sneaker, evita risultati generici
+        stockx_imgs = [m for m in matches if "stockx" in m.lower() or "sneaker" in m.lower()]
+        result = stockx_imgs[0] if stockx_imgs else (matches[0] if matches else None)
+        if result:
+            print(f"✅ Immagine Bing trovata: {result[:80]}")
+            return result
     except Exception as e:
         print(f"⚠️ Bing Images fallito: {e}")
 
