@@ -797,63 +797,65 @@ WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il l
 
 async def fetch_stockx_product(link: str) -> dict:
     """
-    Estrae nome, codice stile e immagine dalla pagina StockX via __NEXT_DATA__ JSON.
-    Restituisce dict con keys: name, style_code, image_url
+    Estrae nome, codice stile e immagine dalla pagina StockX via Playwright.
+    Attende il caricamento JS prima di leggere __NEXT_DATA__.
     """
-    import aiohttp
+    from playwright.async_api import async_playwright
     import json
     import re
 
     result = {"name": None, "style_code": None, "image_url": None}
 
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.get(link, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                text = await resp.text()
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="en-US",
+            )
+            page = await context.new_page()
+            await page.goto(link, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(3000)
+            content = await page.content()
+            await browser.close()
 
-        # Prova __NEXT_DATA__
-        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', text, re.DOTALL)
+        # Leggi __NEXT_DATA__
+        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', content, re.DOTALL)
         if match:
             data = json.loads(match.group(1))
             props = data.get("props", {}).get("pageProps", {})
             product = props.get("product", props.get("data", {}).get("product", {}))
             if product:
                 result["name"] = product.get("title") or product.get("name")
-                result["style_code"] = product.get("styleId") or product.get("style_code")
+                result["style_code"] = product.get("styleId") or product.get("styleCode")
                 result["image_url"] = (
                     product.get("media", {}).get("imageUrl") or
                     product.get("media", {}).get("smallImageUrl") or
                     product.get("imageUrl")
                 )
+                print(f"✅ Dati da __NEXT_DATA__: {result}")
 
-        # Fallback og: tags per nome e immagine
+        # Fallback og: tags
         if not result["name"]:
-            og_title = re.search(r'<meta property="og:title" content="([^"]+)"', text)
+            og_title = re.search(r'<meta property="og:title" content="([^"]+)"', content)
             if og_title:
-                # og:title di StockX è tipo "Buy and Sell Air Jordan 4 ... | StockX"
                 raw = og_title.group(1)
                 result["name"] = re.sub(r' \| StockX.*', '', raw).replace("Buy and Sell ", "").strip()
 
         if not result["image_url"]:
-            og_img = re.search(r'<meta property="og:image" content="([^"]+)"', text)
+            og_img = re.search(r'<meta property="og:image" content="([^"]+)"', content)
             if og_img:
                 result["image_url"] = og_img.group(1)
 
         if not result["style_code"]:
-            # Prova a trovare il codice stile nell'HTML
-            sc = re.search(r'"styleId"\s*:\s*"([^"]+)"', text)
+            sc = re.search(r'"styleId":"([^"]+)"', content)
             if sc:
                 result["style_code"] = sc.group(1)
 
-        print(f"📦 StockX product: {result}")
+        print(f"📦 StockX result finale: {result}")
 
     except Exception as e:
-        print(f"⚠️ StockX fetch fallito: {e}")
+        print(f"⚠️ StockX Playwright fetch fallito: {e}")
 
     return result
 
