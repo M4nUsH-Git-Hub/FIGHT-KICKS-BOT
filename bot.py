@@ -796,70 +796,68 @@ WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il l
 
 
 KICKSDB_API_KEY = "KICKS-A300-700C-981A-AE30A0839709"
+RAPIDAPI_KEY = "7291b27ce9mshb8403cf0bbcfa49p1302afjsn4ea8c08075fe"
 
 async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
     """
-    Cerca immagine tramite KicksDB API (immagini da StockX CDN).
-    Cerca prima per SKU, poi per nome.
+    Cerca immagine tramite Sneaker Database StockX su RapidAPI.
+    Cerca prima per SKU (styleId), poi per nome.
     """
     import aiohttp
     import urllib.parse
 
     headers = {
-        "Authorization": f"Bearer {KICKSDB_API_KEY}",
-        "x-api-key": KICKSDB_API_KEY,
-        "Accept": "application/json",
+        "x-rapidapi-key": RAPIDAPI_KEY,
+        "x-rapidapi-host": "sneaker-database-stockx.p.rapidapi.com",
+        "Content-Type": "application/json",
     }
 
     async with aiohttp.ClientSession() as session:
 
         # ── Tentativo 1: cerca per SKU ──
         try:
-            url = f"https://api.kicks.dev/sneakers?sku={urllib.parse.quote(codice)}&limit=1"
-            print(f"  🔎 KicksDB SKU request: {url}")
+            url = f"https://sneaker-database-stockx.p.rapidapi.com/productprice?styleId={urllib.parse.quote(codice)}"
+            print(f"  🔎 RapidAPI SKU: {codice}")
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                print(f"  📡 KicksDB SKU status: {resp.status}")
+                print(f"  📡 Status: {resp.status}")
                 if resp.status == 200:
                     data = await resp.json()
-                    print(f"  📦 KicksDB SKU response keys: {list(data.keys())}")
-                    results = data.get("results", data.get("data", []))
-                    print(f"  📦 KicksDB SKU results count: {len(results)}")
-                    if results:
-                        img = results[0].get("image") or results[0].get("imageUrl") or results[0].get("thumbnail")
-                        print(f"  🖼 KicksDB SKU img field: {img}")
-                        if img:
-                            print(f"✅ KicksDB SKU match: {img[:80]}")
-                            return img
+                    img = data.get("image") or data.get("thumbnail")
+                    if img:
+                        print(f"✅ Immagine SKU trovata: {img[:80]}")
+                        return img
                 else:
                     body = await resp.text()
-                    print(f"  ❌ KicksDB SKU error body: {body[:200]}")
+                    print(f"  ❌ Error: {body[:200]}")
         except Exception as e:
-            print(f"⚠️ KicksDB SKU search fallito: {e}")
+            print(f"⚠️ RapidAPI SKU fallito: {e}")
 
-        # ── Tentativo 2: cerca per nome ──
+        # ── Tentativo 2: Simple Search per nome ──
         try:
-            url = f"https://api.kicks.dev/sneakers?name={urllib.parse.quote(nome)}&limit=1"
-            print(f"  🔎 KicksDB nome request: {url}")
+            url = f"https://sneaker-database-stockx.p.rapidapi.com/searchproduct?query={urllib.parse.quote(nome)}"
+            print(f"  🔎 RapidAPI nome: {nome}")
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                print(f"  📡 KicksDB nome status: {resp.status}")
+                print(f"  📡 Status: {resp.status}")
                 if resp.status == 200:
                     data = await resp.json()
-                    print(f"  📦 KicksDB nome response keys: {list(data.keys())}")
-                    results = data.get("results", data.get("data", []))
-                    print(f"  📦 KicksDB nome results count: {len(results)}")
-                    if results:
-                        img = results[0].get("image") or results[0].get("imageUrl") or results[0].get("thumbnail")
-                        print(f"  🖼 KicksDB nome img field: {img}")
-                        if img:
-                            print(f"✅ KicksDB nome match: {img[:80]}")
-                            return img
+                    # Può essere lista o dict
+                    if isinstance(data, list) and data:
+                        img = data[0].get("image") or data[0].get("thumbnail")
+                    elif isinstance(data, dict):
+                        results = data.get("results", data.get("products", [data]))
+                        img = results[0].get("image") or results[0].get("thumbnail") if results else None
+                    else:
+                        img = None
+                    if img:
+                        print(f"✅ Immagine nome trovata: {img[:80]}")
+                        return img
                 else:
                     body = await resp.text()
-                    print(f"  ❌ KicksDB nome error body: {body[:200]}")
+                    print(f"  ❌ Error: {body[:200]}")
         except Exception as e:
-            print(f"⚠️ KicksDB nome search fallito: {e}")
+            print(f"⚠️ RapidAPI nome fallito: {e}")
 
-    print("❌ Nessuna immagine trovata su KicksDB")
+    print("❌ Nessuna immagine trovata")
     return None
 
 @tree.command(name="wtb", description="Posta un annuncio WTB nel canale wtb-monitor")
