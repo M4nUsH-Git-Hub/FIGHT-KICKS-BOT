@@ -798,11 +798,13 @@ WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il l
 async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
     """
     Cerca immagine su Bing con query nome + codice + StockX.
-    Molto preciso grazie al codice SKU univoco.
+    Priorità a domini affidabili: stockx, goat, flightclub, kickscrew.
     """
     import aiohttp
     import re
     import urllib.parse
+
+    PREFERRED_DOMAINS = ["stockx.com", "goat.com", "flightclub.com", "kickscrew.com", "solestage.com"]
 
     query = f"{nome} {codice} StockX"
     encoded = urllib.parse.quote(query)
@@ -810,16 +812,33 @@ async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
         }
         url = f"https://www.bing.com/images/search?q={encoded}&form=HDRSC2"
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 text = await resp.text()
 
-        matches = re.findall(r'murl&quot;:&quot;(https://[^&]+\.(?:jpg|jpeg|png|webp))&quot;', text)
-        if matches:
-            print(f"✅ Immagine trovata: {matches[0][:80]}")
-            return matches[0]
+        # Estrai coppie (url immagine, url pagina sorgente)
+        img_matches = re.findall(
+            r'murl&quot;:&quot;(https://[^&]+\.(?:jpg|jpeg|png|webp))&quot;.*?purl&quot;:&quot;(https://[^&]+?)&quot;',
+            text
+        )
+
+        print(f"  🔎 Trovate {len(img_matches)} immagini Bing")
+
+        # Prima passa: cerca immagini da domini preferiti
+        for img_url, page_url in img_matches:
+            if any(d in page_url for d in PREFERRED_DOMAINS):
+                print(f"✅ Immagine da dominio preferito ({page_url[:50]}): {img_url[:60]}")
+                return img_url
+
+        # Seconda passa: prende la prima immagine disponibile escludendo risultati ovviamente sbagliati
+        for img_url, page_url in img_matches:
+            if not any(x in img_url.lower() for x in ["logo", "icon", "banner", "avatar"]):
+                print(f"✅ Immagine fallback: {img_url[:80]}")
+                return img_url
+
     except Exception as e:
         print(f"⚠️ Bing Images fallito: {e}")
 
