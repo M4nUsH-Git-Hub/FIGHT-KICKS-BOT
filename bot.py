@@ -815,30 +815,46 @@ async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
         # ── Tentativo 1: cerca per SKU ──
         try:
             url = f"https://api.kicks.dev/sneakers?sku={urllib.parse.quote(codice)}&limit=1"
+            print(f"  🔎 KicksDB SKU request: {url}")
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                print(f"  📡 KicksDB SKU status: {resp.status}")
                 if resp.status == 200:
                     data = await resp.json()
-                    results = data.get("results", [])
+                    print(f"  📦 KicksDB SKU response keys: {list(data.keys())}")
+                    results = data.get("results", data.get("data", []))
+                    print(f"  📦 KicksDB SKU results count: {len(results)}")
                     if results:
-                        img = results[0].get("image")
+                        img = results[0].get("image") or results[0].get("imageUrl") or results[0].get("thumbnail")
+                        print(f"  🖼 KicksDB SKU img field: {img}")
                         if img:
                             print(f"✅ KicksDB SKU match: {img[:80]}")
                             return img
+                else:
+                    body = await resp.text()
+                    print(f"  ❌ KicksDB SKU error body: {body[:200]}")
         except Exception as e:
             print(f"⚠️ KicksDB SKU search fallito: {e}")
 
         # ── Tentativo 2: cerca per nome ──
         try:
             url = f"https://api.kicks.dev/sneakers?name={urllib.parse.quote(nome)}&limit=1"
+            print(f"  🔎 KicksDB nome request: {url}")
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                print(f"  📡 KicksDB nome status: {resp.status}")
                 if resp.status == 200:
                     data = await resp.json()
-                    results = data.get("results", [])
+                    print(f"  📦 KicksDB nome response keys: {list(data.keys())}")
+                    results = data.get("results", data.get("data", []))
+                    print(f"  📦 KicksDB nome results count: {len(results)}")
                     if results:
-                        img = results[0].get("image")
+                        img = results[0].get("image") or results[0].get("imageUrl") or results[0].get("thumbnail")
+                        print(f"  🖼 KicksDB nome img field: {img}")
                         if img:
                             print(f"✅ KicksDB nome match: {img[:80]}")
                             return img
+                else:
+                    body = await resp.text()
+                    print(f"  ❌ KicksDB nome error body: {body[:200]}")
         except Exception as e:
             print(f"⚠️ KicksDB nome search fallito: {e}")
 
