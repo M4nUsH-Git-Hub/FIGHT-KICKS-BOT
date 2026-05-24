@@ -251,6 +251,7 @@ async def setup(interaction: discord.Interaction, canale: discord.TextChannel = 
         f"✅ Canale di backup impostato su {canale.mention}.", ephemeral=True)
 
 
+
 @ping_group.command(name="addchannel", description="Aggiunge un canale aperto — archivia ping di chiunque")
 @app_commands.describe(canale="Canale da aggiungere")
 @app_commands.checks.has_permissions(administrator=True)
@@ -287,6 +288,7 @@ async def config_cmd(interaction: discord.Interaction):
 
     backup_ch = guild.get_channel(cfg.get("backup_channel_id") or 0)
     ch_str = backup_ch.mention if backup_ch else "*(non impostato)*"
+
 
     open_ids = cfg.get("open_channel_ids", [])
     open_str = ", ".join(f"<#{c}>" for c in open_ids) if open_ids else "*(nessuno)*"
@@ -502,6 +504,418 @@ async def antilink_error(interaction: discord.Interaction, error: app_commands.A
 tree.add_command(antilink_group)
 
 
+# ── Comando test sport ────────────────────────────────────────────────────────
+
+@tree.command(name="sportnow", description="Invia subito le partite in chiaro di oggi (test)")
+@app_commands.checks.has_permissions(administrator=True)
+async def sportnow(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await send_sport_notification()
+    await interaction.followup.send("✅ Notifica sport inviata!", ephemeral=True)
+
+@sportnow.error
+async def sportnow_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("❌ Solo gli amministratori possono usare questo comando.", ephemeral=True)
+
+
+# ── Sistema notifiche partite in chiaro ───────────────────────────────────────
+
+SPORT_CHANNEL_ID = 1505567358507421737
+NOTIFY_HOUR = 8  # ora invio giornaliero (08:00)
+
+CANALI_TARGET = [
+    "como tv", "nove", "raiplay", "tv8", "canale 5",
+    "italia 1", "dazn free", "rai 1", "rai 2", "rai sport", "sportitalia",
+    "cielo", "lba tv", "lbatv"
+]
+
+FOOTER_ICON = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
+
+
+async def scrape_sport_chiaro(url: str) -> list:
+    """Scrapa diretta.it per un dato sport e restituisce le partite in chiaro."""
+    from playwright.async_api import async_playwright
+    from bs4 import BeautifulSoup
+
+    risultati = []
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(5000)
+            content = await page.content()
+            await browser.close()
+
+        soup = BeautifulSoup(content, "html.parser")
+
+        # Nuova struttura: trova tutti i blocchi "Canale TV" tramite data-testid
+        tv_labels = soup.find_all(attrs={"data-testid": "wcl-scores-overline-02"})
+
+        for label in tv_labels:
+            if "Canale TV" not in label.get_text():
+                continue
+
+            # Il contenitore dei canali è il fratello successivo (wcl-links)
+            canali_container = label.find_next_sibling(class_=lambda c: c and "wcl-links" in " ".join(c))
+            if not canali_container:
+                # prova col genitore
+                parent = label.parent
+                canali_container = parent.find(class_=lambda c: c and "wcl-links" in " ".join(c)) if parent else None
+
+            if not canali_container:
+                continue
+
+            # Estrai i nomi dei canali dai link tv
+            canale_links = canali_container.find_all("a", class_=lambda c: c and "wcl-tvStationLink" in " ".join(c))
+            if not canale_links:
+                continue
+
+            # Filtra solo canali in chiaro
+            canali_trovati = []
+            for a_ch in canale_links:
+                nome = a_ch.get("title", "") or a_ch.get_text(strip=True)
+                href = a_ch.get("href", "")
+                if any(c in nome.lower() for c in CANALI_TARGET):
+                    canali_trovati.append({"nome": nome, "href": href})
+
+            if not canali_trovati:
+                continue
+
+            # Risali al row della partita
+            row = label.find_parent(class_="event__match")
+            if not row:
+                continue
+
+            a = row.find("a", class_="eventRowLink")
+            if not a:
+                continue
+
+            match_name = a.get("aria-label", "Partita sconosciuta")
+            link = a.get("href", "")
+
+            time_el = row.find(class_=lambda c: c and "event__time" in c)
+            orario = time_el.get_text(strip=True) if time_el else "?"
+
+            competition = "?"
+            prev = row.find_previous_sibling()
+            for _ in range(20):
+                if prev is None:
+                    break
+                if prev.get("class") and "headerLeague__wrapper" in prev.get("class", []):
+                    title_el = prev.find(id=lambda i: i and "header-league-title" in i)
+                    if title_el:
+                        competition = title_el.get_text(strip=True)
+                    break
+                prev = prev.find_previous_sibling()
+
+            # Costruisci stringa canali con link diretti presi dal sito
+            canali_str = ", ".join(
+                f"[{c['nome']}]({c['href']})" if c['href'] else c['nome']
+                for c in canali_trovati
+            )
+
+            risultati.append({
+                "match": match_name,
+                "orario": orario,
+                "competition": competition,
+                "canali": canali_str,
+                "link": link
+            })
+
+    except Exception as e:
+        print(f"⚠️ Errore scraping {url}: {e}")
+
+    return risultati
+
+
+async def scrape_partite_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/calcio/")
+
+
+async def scrape_tennis_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/tennis/")
+
+
+async def scrape_f1_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/formula-1/")
+
+
+async def scrape_motogp_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/motogp/")
+
+
+async def scrape_basket_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/basket/")
+
+
+async def scrape_ciclismo_chiaro() -> list:
+    return await scrape_sport_chiaro("https://www.diretta.it/ciclismo/")
+
+
+
+CANALE_LINKS = {
+    "como tv": "https://tv.comofootball.com/",
+    "raiplay": "https://www.raiplay.it/",
+    "rai sport": "https://www.raiplay.it/dirette/raisport",
+    "nove": "https://nove.tv/",
+    "tv8": "https://www.tv8.it/streaming",
+    "sportitalia": "https://www.sportitalia.it/",
+    "rai 1": "https://www.raiplay.it/dirette/rai1",
+    "rai 2": "https://www.raiplay.it/dirette/rai2",
+    "canale 5": "https://www.mediasetplay.mediaset.it/diretta/canale5",
+    "italia 1": "https://www.mediasetplay.mediaset.it/diretta/italia1",
+    "dazn free": "https://www.dazn.com/",
+    "cielo": "https://www.cielotv.it/streaming",
+    "lba tv": "https://www.lbatv.com/",
+    "lbatv": "https://www.lbatv.com/",
+}
+
+
+def format_canali(canali_str: str) -> str:
+    """I canali arrivano già formattati con link dal sito, restituisce la stringa così com'è."""
+    return canali_str
+
+
+async def send_sport_notification():
+    """Invia l'embed delle partite in chiaro nel canale sport."""
+    channel = bot.get_channel(SPORT_CHANNEL_ID)
+    if not channel:
+        print("⚠️ Canale sport non trovato")
+        return
+
+    print("🔍 Scraping partite in chiaro...")
+    calcio = await scrape_partite_chiaro()
+    tennis = await scrape_tennis_chiaro()
+    f1 = await scrape_f1_chiaro()
+    motogp = await scrape_motogp_chiaro()
+    basket = await scrape_basket_chiaro()
+    ciclismo = await scrape_ciclismo_chiaro()
+
+    if not calcio and not tennis and not f1 and not motogp and not basket and not ciclismo:
+        print("ℹ️ Nessuna partita in chiaro oggi")
+        return
+
+    today = datetime.now(timezone.utc).strftime("%d/%m/%Y")
+
+    embed = discord.Embed(
+        title=f"📺 Free Matches Today — {today}",
+        description="Matches available for free on the following channels",
+        color=discord.Color(0x6B6B6B),
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    for p in calcio:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"⚽ {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    for p in tennis:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🎾 {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    for p in f1:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🏎️ {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    for p in motogp:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🏍️ {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    for p in basket:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🏀 {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    for p in ciclismo:
+        canali_formatted = format_canali(p["canali"])
+        value = f"🕐 **{p['orario']}** | {canali_formatted}\n📊 Check on [Diretta.it]({p['link']})"
+        embed.add_field(
+            name=f"🚴 {p['match']} — {p['competition']}",
+            value=value,
+            inline=False
+        )
+
+    embed.set_footer(text="Sport News", icon_url=FOOTER_ICON)
+    await channel.send(embed=embed)
+    print(f"✅ Inviate — {len(calcio)} calcio, {len(tennis)} tennis, {len(f1)} F1, {len(motogp)} MotoGP, {len(basket)} basket, {len(ciclismo)} ciclismo")
+
+
+async def daily_sport_loop():
+    """Loop giornaliero che invia le notifiche alle 08:00."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        now = datetime.now(timezone.utc)
+        # Calcola prossime 08:00 UTC (07:00 Italia inverno, 06:00 estate — aggiusta se serve)
+        target = now.replace(hour=NOTIFY_HOUR, minute=0, second=0, microsecond=0)
+        if now >= target:
+            target = target.replace(day=target.day + 1)
+        wait_seconds = (target - now).total_seconds()
+        print(f"⏰ Prossima notifica sport tra {int(wait_seconds//3600)}h {int((wait_seconds%3600)//60)}m")
+        await asyncio.sleep(wait_seconds)
+        await send_sport_notification()
+
+
+
+# ── WTB Command ───────────────────────────────────────────────────────────────
+
+WTB_CHANNEL_ID = 1416219889303027722  # ⚠️ Sostituisci con l'ID reale di #wtb-monitor
+
+FOOTER_ICON_WTB = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
+
+WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il link reale
+
+
+async def fetch_stockx_image(url: str):
+    """Prende l'immagine del prodotto da una pagina StockX."""
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(3000)
+            selectors = [
+                'img[data-testid="product-image"]',
+                'img.css-1rv5lcm',
+                'picture img',
+                'img[alt*="StockX"]',
+            ]
+            img_url = None
+            for sel in selectors:
+                el = await page.query_selector(sel)
+                if el:
+                    src = await el.get_attribute("src")
+                    if src and src.startswith("http"):
+                        img_url = src
+                        break
+            await browser.close()
+            return img_url
+    except Exception as e:
+        print(f"⚠️ Errore fetch StockX image: {e}")
+        return None
+
+
+async def fetch_google_image(query: str):
+    """Cerca su Google Images e restituisce il primo risultato immagine."""
+    try:
+        from playwright.async_api import async_playwright
+        search_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+            await page.goto(search_url, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(2000)
+            imgs = await page.query_selector_all("img")
+            img_url = None
+            for img in imgs[1:]:
+                src = await img.get_attribute("src")
+                if src and src.startswith("http") and "gstatic" not in src:
+                    img_url = src
+                    break
+            await browser.close()
+            return img_url
+    except Exception as e:
+        print(f"⚠️ Errore Google Images: {e}")
+        return None
+
+
+@tree.command(name="wtb", description="Posta un annuncio WTB nel canale wtb-monitor")
+@app_commands.describe(
+    scarpa="Nome della scarpa (es. Yeezy Boost 350 V2 Bone)",
+    taglia="Taglia (es. 43 1/3)",
+    codice="Codice stile (es. BQ7669-111)",
+    condizione="Condizione (default: DSWT)",
+    link="Link StockX del prodotto (opzionale ma consigliato per la foto)",
+)
+async def wtb(
+    interaction: discord.Interaction,
+    scarpa: str,
+    taglia: str,
+    codice: str,
+    condizione: str = "DSWT",
+    link: str = None,
+):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Solo il proprietario del server può usare questo comando.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    # Cerca immagine — prima StockX, poi Google fallback
+    img_url = None
+    if link:
+        print(f"🔍 Fetching immagine da StockX: {link}")
+        img_url = await fetch_stockx_image(link)
+    if not img_url:
+        query = f"{scarpa} StockX"
+        print(f"🔍 Fallback Google Images: {query}")
+        img_url = await fetch_google_image(query)
+
+    channel = interaction.guild.get_channel(WTB_CHANNEL_ID)
+    if not channel:
+        await interaction.followup.send("❌ Canale wtb-monitor non trovato. Controlla WTB_CHANNEL_ID.", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title=f"{scarpa} - {taglia}",
+        color=discord.Color(0x1a73e8),
+    )
+    embed.add_field(name="\u200b", value=(
+        f"• {codice} – {condizione} – YOUR OFFER\n"
+        f"• We are looking for the following items\n"
+        f"• Contact {interaction.user.mention} privately via DM\n"
+        f"• [FIGHT KICKS OFFICIAL WTB SERVER]({WTB_SERVER_LINK})"
+    ), inline=False)
+
+    if img_url:
+        embed.set_image(url=img_url)
+
+    embed.set_footer(text="Daily WTB", icon_url=FOOTER_ICON_WTB)
+
+    await channel.send(embed=embed)
+    await interaction.followup.send("✅ Annuncio WTB inviato!", ephemeral=True)
+    print(f"✅ WTB inviato — {scarpa} {taglia} | img: {'✅' if img_url else '❌'}")
+
+
+@wtb.error
+async def wtb_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    await interaction.response.send_message("❌ Errore nel comando WTB.", ephemeral=True)
+
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
 @bot.event
@@ -509,11 +923,19 @@ async def on_disconnect():
     print("⚠️  Bot disconnesso — tentativo di riconnessione automatica...")
 
 
+
 if __name__ == "__main__":
     import time
+    import subprocess
     token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
         raise RuntimeError("Variabile d'ambiente DISCORD_BOT_TOKEN non impostata.")
+
+    # Playwright serve per il comando /wtb
+    print("🔧 Installazione Chromium...")
+    subprocess.run(["python", "-m", "playwright", "install", "chromium"], check=False)
+    subprocess.run(["python", "-m", "playwright", "install-deps", "chromium"], check=False)
+    print("✅ Chromium pronto")
 
     while True:
         try:
