@@ -798,13 +798,17 @@ WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il l
 async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
     """
     Cerca immagine su Bing con query nome + codice + StockX.
+    Estrae sia l'immagine che la pagina sorgente dal JSON embedded di Bing.
     Priorità a domini affidabili: stockx, goat, flightclub, kickscrew.
     """
     import aiohttp
     import re
+    import json
+    import html
     import urllib.parse
 
     PREFERRED_DOMAINS = ["stockx.com", "goat.com", "flightclub.com", "kickscrew.com", "solestage.com"]
+    BLACKLIST = ["dreamstime.com", "shutterstock.com", "gettyimages", "alamy.com", "istockphoto"]
 
     query = f"{nome} {codice} StockX"
     encoded = urllib.parse.quote(query)
@@ -819,25 +823,40 @@ async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 text = await resp.text()
 
-        # Estrai coppie (url immagine, url pagina sorgente)
-        img_matches = re.findall(
-            r'murl&quot;:&quot;(https://[^&]+\.(?:jpg|jpeg|png|webp))&quot;.*?purl&quot;:&quot;(https://[^&]+?)&quot;',
-            text
-        )
+        # Bing mette i dati immagine in blocchi JSON con m= attribute
+        # Format: <a ... m="{&quot;murl&quot;:&quot;IMG_URL&quot;,&quot;purl&quot;:&quot;PAGE_URL&quot;...}"
+        raw_blocks = re.findall(r' m=\"({[^"]+})\"', text)
+        if not raw_blocks:
+            # Prova formato alternativo
+            raw_blocks = re.findall(r'm=&quot;({.*?})&quot;', text)
 
-        print(f"  🔎 Trovate {len(img_matches)} immagini Bing")
+        items = []
+        for block in raw_blocks:
+            try:
+                decoded = html.unescape(block)
+                data = json.loads(decoded)
+                murl = data.get("murl", "")
+                purl = data.get("purl", "")
+                if murl and murl.startswith("http"):
+                    items.append((murl, purl))
+            except Exception:
+                continue
 
-        # Prima passa: cerca immagini da domini preferiti
-        for img_url, page_url in img_matches:
+        print(f"  🔎 Trovate {len(items)} immagini Bing con sorgente")
+
+        # Filtra blacklist
+        items = [(img, page) for img, page in items if not any(b in img for b in BLACKLIST)]
+
+        # Prima passa: domini preferiti
+        for img_url, page_url in items:
             if any(d in page_url for d in PREFERRED_DOMAINS):
-                print(f"✅ Immagine da dominio preferito ({page_url[:50]}): {img_url[:60]}")
+                print(f"✅ Immagine da dominio preferito ({page_url[:60]})")
                 return img_url
 
-        # Seconda passa: prende la prima immagine disponibile escludendo risultati ovviamente sbagliati
-        for img_url, page_url in img_matches:
-            if not any(x in img_url.lower() for x in ["logo", "icon", "banner", "avatar"]):
-                print(f"✅ Immagine fallback: {img_url[:80]}")
-                return img_url
+        # Seconda passa: prima immagine non in blacklist
+        if items:
+            print(f"✅ Immagine fallback: {items[0][0][:80]}")
+            return items[0][0]
 
     except Exception as e:
         print(f"⚠️ Bing Images fallito: {e}")
