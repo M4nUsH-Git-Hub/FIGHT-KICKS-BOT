@@ -890,17 +890,16 @@ async def wtb(
         url=url_str,
         color=discord.Color(0x575553),
     )
-    embed.add_field(name="\u200b", value=(
+    embed.description = (
         f"- {codice} – {condizione} – YOUR OFFER\n"
-        f"- We are looking for the following items\n"
         f"- Contact {interaction.user.mention} privately via DM\n"
         f"- [FIGHT KICKS OFFICIAL WTB SERVER]({WTB_SERVER_LINK})"
-    ), inline=False)
+    )
 
     if img_url:
         embed.set_image(url=img_url)
 
-    embed.set_footer(text="Daily WTB", icon_url=FOOTER_ICON_WTB)
+    embed.set_footer(text="WTB Monitor", icon_url=FOOTER_ICON_WTB)
 
     await channel.send(embed=embed)
     await interaction.followup.send("✅ Annuncio WTB inviato!", ephemeral=True)
