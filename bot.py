@@ -866,7 +866,9 @@ async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
     taglia="Taglia EU (es. 43 1/3)",
     codice="Codice SKU (es. HF4340-800)",
     link="Link StockX del prodotto",
+    immagine="URL immagine del prodotto",
     condizione="Condizione (default: DSWT)",
+    price="Prezzo offerto (default: YOUR OFFER)",
 )
 async def wtb(
     interaction: discord.Interaction,
@@ -874,7 +876,9 @@ async def wtb(
     taglia: str,
     codice: str,
     link: str,
+    immagine: str,
     condizione: str = "DSWT",
+    price: str = "YOUR OFFER",
 ):
     if interaction.user.id != interaction.guild.owner_id:
         await interaction.response.send_message("❌ Solo il proprietario del server può usare questo comando.", ephemeral=True)
@@ -882,8 +886,7 @@ async def wtb(
 
     await interaction.response.defer(ephemeral=True)
 
-    print(f"🔍 Cercando immagine: {nome} {codice}")
-    img_url = await fetch_sneaker_image(nome, codice)
+    img_url = immagine if immagine else None
 
     channel = interaction.guild.get_channel(WTB_CHANNEL_ID)
     if not channel:
@@ -892,10 +895,11 @@ async def wtb(
 
     embed = discord.Embed(
         title=f"{nome} - {taglia}",
+        url=link,
         color=discord.Color(0x575553),
     )
     embed.description = (
-        f"- {codice} – {condizione} – [STOCKX]({link})\n"
+        f"- {codice} – {condizione} – {price}\n"
         f"- Contact {interaction.user.mention} privately via DM\n"
         f"- [FIGHT KICKS OFFICIAL WTB SERVER]({WTB_SERVER_LINK})"
     )
