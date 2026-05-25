@@ -910,6 +910,129 @@ async def wtb_error(interaction: discord.Interaction, error: app_commands.AppCom
     await interaction.response.send_message("❌ Errore nel comando WTB.", ephemeral=True)
 
 
+
+# ── WTB Update Command ────────────────────────────────────────────────────────
+
+WTB_LIST_URL = "https://www.wtbmarketlist.eu/list/734909407825100813"
+WTB_UPDATE_CHANNEL_ID = 1420780972340805754  # ⚠️ Sostituisci con l'ID del canale #wtb-update
+
+async def scrape_wtb_list() -> tuple[list, bytes | None]:
+    """
+    Scrapa wtbmarketlist.eu e restituisce (lista prodotti, screenshot PNG).
+    """
+    from playwright.async_api import async_playwright
+    from bs4 import BeautifulSoup
+
+    prodotti = []
+    screenshot = None
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 800},
+            )
+            page = await context.new_page()
+            await page.goto(WTB_LIST_URL, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(3000)
+
+            # Screenshot dell'area prodotti
+            try:
+                screenshot = await page.screenshot(full_page=False, type="png")
+            except Exception as e:
+                print(f"⚠️ Screenshot fallito: {e}")
+
+            content_html = await page.content()
+            await browser.close()
+
+        soup = BeautifulSoup(content_html, "html.parser")
+
+        # Cerca le card prodotti
+        cards = soup.find_all(class_=lambda c: c and any(x in " ".join(c) for x in ["card", "product", "item", "sneaker"]))
+        print(f"  📦 Card trovate: {len(cards)}")
+
+        for card in cards:
+            # Nome
+            name_el = card.find(class_=lambda c: c and any(x in " ".join(c) for x in ["title", "name", "product-name"]))
+            name = name_el.get_text(strip=True) if name_el else None
+            if not name:
+                h_el = card.find(["h2", "h3", "h4", "strong"])
+                name = h_el.get_text(strip=True) if h_el else None
+
+            # SKU
+            sku_el = card.find(class_=lambda c: c and any(x in " ".join(c) for x in ["sku", "style", "code"]))
+            sku = sku_el.get_text(strip=True) if sku_el else None
+
+            # Taglia
+            size_el = card.find(class_=lambda c: c and any(x in " ".join(c) for x in ["size", "taglia"]))
+            size = size_el.get_text(strip=True) if size_el else None
+
+            if name and len(name) > 3:
+                prodotti.append({
+                    "name": name,
+                    "sku": sku or "N/A",
+                    "size": size or "N/A",
+                })
+
+        print(f"  ✅ Prodotti estratti: {len(prodotti)}")
+
+    except Exception as e:
+        print(f"⚠️ Errore scraping WTB list: {e}")
+
+    return prodotti, screenshot
+
+
+@tree.command(name="wtbupdate", description="Invia la WTB List aggiornata nel canale")
+async def wtbupdate(interaction: discord.Interaction):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    print(f"🔍 Scraping WTB list: {WTB_LIST_URL}")
+
+    prodotti, screenshot = await scrape_wtb_list()
+
+    channel = interaction.guild.get_channel(WTB_UPDATE_CHANNEL_ID)
+    if not channel:
+        await interaction.followup.send("❌ Canale WTB Update non trovato.", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="WTB LIST UPDATE",
+        color=discord.Color(0x575553),
+        timestamp=discord.utils.utcnow(),
+    )
+
+    if prodotti:
+        lines = []
+        for p in prodotti:
+            lines.append(f"• {p['name']} – {p['sku']} – {p['size']}")
+        embed.description = "\n".join(lines)
+    else:
+        embed.description = f"[Vedi lista completa]({WTB_LIST_URL})"
+
+    embed.set_footer(text="FIGHT KICKS – WTB LIST UPDATE", icon_url=FOOTER_ICON_WTB)
+
+    # Invia screenshot come file allegato se disponibile
+    if screenshot:
+        import io
+        file = discord.File(fp=io.BytesIO(screenshot), filename="wtb_list.png")
+        embed.set_image(url="attachment://wtb_list.png")
+        await channel.send(embed=embed, file=file)
+    else:
+        await channel.send(embed=embed)
+
+    await interaction.followup.send("✅ WTB Update inviato!", ephemeral=True)
+    print(f"✅ WTB Update inviato — {len(prodotti)} prodotti")
+
+
+@wtbupdate.error
+async def wtbupdate_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    await interaction.response.send_message("❌ Errore nel comando WTB Update.", ephemeral=True)
+
+
 # ── Webhook Manager ───────────────────────────────────────────────────────────
 
 def get_webhooks() -> list:
