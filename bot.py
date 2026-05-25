@@ -932,7 +932,7 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
             )
             page = await context.new_page()
             await page.goto(WTB_LIST_URL, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(4000)
+            await page.wait_for_timeout(10000)  # Attesa extra per superare check browser
 
             try:
                 screenshot = await page.screenshot(full_page=False, type="png")
