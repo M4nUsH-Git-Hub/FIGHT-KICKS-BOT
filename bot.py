@@ -935,11 +935,12 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
             )
             page = await context.new_page()
             await page.goto(WTB_LIST_URL, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(4000)
 
-            # Screenshot dell'area prodotti
+            # Screenshot pagina
             try:
                 screenshot = await page.screenshot(full_page=False, type="png")
+                print(f"  📸 Screenshot: {len(screenshot)} bytes")
             except Exception as e:
                 print(f"⚠️ Screenshot fallito: {e}")
 
@@ -948,34 +949,42 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
 
         soup = BeautifulSoup(content_html, "html.parser")
 
-        # Cerca le card prodotti
-        cards = soup.find_all(class_=lambda c: c and any(x in " ".join(c) for x in ["card", "product", "item", "sneaker"]))
+        # Card = div con border e cursor-pointer (struttura wtbmarketlist)
+        cards = soup.find_all("div", class_=lambda c: c and "cursor-pointer" in c and "rounded" in c)
         print(f"  📦 Card trovate: {len(cards)}")
 
         for card in cards:
-            # Nome
-            name_el = card.find(class_=lambda c: c and any(x in " ".join(c) for x in ["title", "name", "product-name"]))
+            # Nome — h2 con font-bold
+            name_el = card.find("h2", class_=lambda c: c and "font-bold" in c)
             name = name_el.get_text(strip=True) if name_el else None
-            if not name:
-                h_el = card.find(["h2", "h3", "h4", "strong"])
-                name = h_el.get_text(strip=True) if h_el else None
 
-            # SKU
-            sku_el = card.find(class_=lambda c: c and any(x in " ".join(c) for x in ["sku", "style", "code"]))
-            sku = sku_el.get_text(strip=True) if sku_el else None
+            # Brand e SKU — due <p> con text-[10px]
+            p_tags = card.find_all("p", class_=lambda c: c and "text-\[10px\]" in c)
+            sku = None
+            for p in p_tags:
+                txt = p.get_text(strip=True)
+                # SKU ha font-mono
+                if p.get("class") and "font-mono" in " ".join(p.get("class", [])):
+                    sku = txt
 
-            # Taglia
-            size_el = card.find(class_=lambda c: c and any(x in " ".join(c) for x in ["size", "taglia"]))
-            size = size_el.get_text(strip=True) if size_el else None
+            # Taglia — div con mt-auto flex flex-wrap
+            size_container = card.find("div", class_=lambda c: c and "mt-auto" in c and "flex-wrap" in c)
+            size = "N/A"
+            if size_container:
+                size_tags = size_container.find_all(["span", "div", "p"])
+                sizes = [s.get_text(strip=True) for s in size_tags if s.get_text(strip=True).replace(".", "").isdigit()]
+                if sizes:
+                    size = ", ".join(sizes)
 
             if name and len(name) > 3:
                 prodotti.append({
                     "name": name,
                     "sku": sku or "N/A",
-                    "size": size or "N/A",
+                    "size": size,
                 })
+                print(f"  ✅ {name} | {sku} | {size}")
 
-        print(f"  ✅ Prodotti estratti: {len(prodotti)}")
+        print(f"  📊 Prodotti estratti: {len(prodotti)}")
 
     except Exception as e:
         print(f"⚠️ Errore scraping WTB list: {e}")
