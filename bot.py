@@ -910,13 +910,126 @@ async def wtb(
     embed.set_footer(text="WTB Monitor", icon_url=FOOTER_ICON_WTB)
 
     await channel.send(embed=embed)
-    await interaction.followup.send(f"✅ WTB inviato — {nome} {taglia}", ephemeral=True)
-    print(f"✅ WTB inviato — {nome} | img:{'✅' if img_url else '❌'}")
+    await send_to_webhooks(embed)
+    await interaction.followup.send(f"✅ WTB inviato — {nome} {taglia} | Webhook: {len(get_webhooks())}", ephemeral=True)
+    print(f"✅ WTB inviato — {nome} | img:{'✅' if img_url else '❌'} | webhook:{len(get_webhooks())}")
 
 
 @wtb.error
 async def wtb_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     await interaction.response.send_message("❌ Errore nel comando WTB.", ephemeral=True)
+
+
+# ── Webhook Manager ───────────────────────────────────────────────────────────
+
+def get_webhooks() -> list:
+    cfg = load_config()
+    return cfg.get("wtb_webhooks", [])
+
+def save_webhooks(webhooks: list):
+    cfg = load_config()
+    cfg["wtb_webhooks"] = webhooks
+    save_config(cfg)
+
+async def send_to_webhooks(embed: discord.Embed):
+    """Invia l'embed a tutti i webhook salvati in parallelo."""
+    import aiohttp
+    webhooks = get_webhooks()
+    if not webhooks:
+        return
+
+    payload = {
+        "embeds": [embed.to_dict()]
+    }
+
+    async def send_one(url: str):
+        try:
+            # Normalizza URL — rimuove /v10 se presente
+            clean_url = url.replace("/api/v10/webhooks/", "/api/webhooks/")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(clean_url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status in (200, 204):
+                        print(f"✅ Webhook OK: {clean_url[:60]}")
+                    else:
+                        body = await resp.text()
+                        print(f"⚠️ Webhook {resp.status}: {clean_url[:60]} — {body[:100]}")
+        except Exception as e:
+            print(f"❌ Webhook error ({url[:60]}): {e}")
+
+    await asyncio.gather(*[send_one(url) for url in webhooks])
+    print(f"📡 Inviato a {len(webhooks)} webhook")
+
+
+class WebhookGroup(app_commands.Group):
+    def __init__(self):
+        super().__init__(name="webhook", description="Gestione webhook WTB")
+
+
+webhook_group = WebhookGroup()
+
+
+@webhook_group.command(name="add", description="Aggiunge un webhook alla lista WTB")
+@app_commands.describe(url="URL del webhook Discord")
+async def webhook_add(interaction: discord.Interaction, url: str):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
+        return
+    if not ("discord.com/api" in url and "webhooks" in url):
+        await interaction.response.send_message("❌ URL webhook non valido.", ephemeral=True)
+        return
+    webhooks = get_webhooks()
+    if url in webhooks:
+        await interaction.response.send_message("ℹ️ Webhook già presente.", ephemeral=True)
+        return
+    webhooks.append(url)
+    save_webhooks(webhooks)
+    await interaction.response.send_message(f"✅ Webhook aggiunto. Totale: {len(webhooks)}", ephemeral=True)
+
+
+@webhook_group.command(name="remove", description="Rimuove un webhook dalla lista WTB")
+@app_commands.describe(url="URL del webhook da rimuovere")
+async def webhook_remove(interaction: discord.Interaction, url: str):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
+        return
+    webhooks = get_webhooks()
+    if url not in webhooks:
+        await interaction.response.send_message("ℹ️ Webhook non trovato.", ephemeral=True)
+        return
+    webhooks.remove(url)
+    save_webhooks(webhooks)
+    await interaction.response.send_message(f"✅ Webhook rimosso. Totale: {len(webhooks)}", ephemeral=True)
+
+
+@webhook_group.command(name="list", description="Mostra tutti i webhook salvati")
+async def webhook_list(interaction: discord.Interaction):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
+        return
+    webhooks = get_webhooks()
+    if not webhooks:
+        await interaction.response.send_message("ℹ️ Nessun webhook salvato.", ephemeral=True)
+        return
+    lines = [f"`{i+1}.` {url[:80]}..." for i, url in enumerate(webhooks)]
+    embed = discord.Embed(
+        title=f"📡 Webhook WTB ({len(webhooks)})",
+        description="\n".join(lines),
+        color=discord.Color(0x575553)
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@webhook_group.command(name="clear", description="Rimuove tutti i webhook")
+async def webhook_clear(interaction: discord.Interaction):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
+        return
+    save_webhooks([])
+    await interaction.response.send_message("✅ Tutti i webhook rimossi.", ephemeral=True)
+
+
+tree.add_command(webhook_group)
+
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
