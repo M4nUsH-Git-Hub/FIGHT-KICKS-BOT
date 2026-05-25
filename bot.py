@@ -1029,9 +1029,7 @@ async def wtbupdate(interaction: discord.Interaction):
     print(f"✅ WTB Update inviato — {len(prodotti)} prodotti")
 
 
-@wtbupdate.error
-async def wtbupdate_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    await interaction.response.send_message("❌ Errore nel comando WTB Update.", ephemeral=True)
+
 
 
 # ── Webhook Manager ───────────────────────────────────────────────────────────
