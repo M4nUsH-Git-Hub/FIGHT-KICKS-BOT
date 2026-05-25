@@ -944,11 +944,8 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
             except Exception as e:
                 print(f"⚠️ Screenshot fallito: {e}")
 
-            content_html = await page.content()
-            await browser.close()
-
-        # Estrai dati via JavaScript — più affidabile con classi Tailwind dinamiche
-        prodotti = await page.evaluate("""
+            # Estrai dati via JavaScript prima di chiudere il browser
+            prodotti = await page.evaluate("""
             () => {
                 const results = [];
                 // Trova tutti i button/div con cursor-pointer che contengono h2
@@ -983,6 +980,8 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
                 return results;
             }
         """)
+            await browser.close()
+
         print(f"  📊 Prodotti estratti: {len(prodotti)}")
         for p in prodotti:
             print(f"  ✅ {p['name']} | {p['sku']} | {p['size']}")
