@@ -947,44 +947,45 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
             content_html = await page.content()
             await browser.close()
 
-        soup = BeautifulSoup(content_html, "html.parser")
+        # Estrai dati via JavaScript — più affidabile con classi Tailwind dinamiche
+        prodotti = await page.evaluate("""
+            () => {
+                const results = [];
+                // Trova tutti i button/div con cursor-pointer che contengono h2
+                const cards = document.querySelectorAll('div[class*="cursor-pointer"]');
+                cards.forEach(card => {
+                    const h2 = card.querySelector('h2');
+                    if (!h2) return;
+                    const name = h2.textContent.trim();
+                    if (name.length < 3) return;
 
-        # Card = div con border e cursor-pointer (struttura wtbmarketlist)
-        cards = soup.find_all("div", class_=lambda c: c and "cursor-pointer" in c and "rounded" in c)
-        print(f"  📦 Card trovate: {len(cards)}")
+                    // SKU — p con font-mono
+                    const skuEl = card.querySelector('p[class*="font-mono"]');
+                    const sku = skuEl ? skuEl.textContent.trim() : 'N/A';
 
-        for card in cards:
-            # Nome — h2 con font-bold
-            name_el = card.find("h2", class_=lambda c: c and "font-bold" in c)
-            name = name_el.get_text(strip=True) if name_el else None
+                    // Taglia — div con mt-auto
+                    const sizeContainer = card.querySelector('div[class*="mt-auto"]');
+                    let size = 'N/A';
+                    if (sizeContainer) {
+                        const sizeEls = sizeContainer.querySelectorAll('span, div, p, button');
+                        const sizes = [];
+                        sizeEls.forEach(el => {
+                            const txt = el.textContent.trim();
+                            if (txt && !isNaN(parseFloat(txt.replace(',', '.')))) {
+                                sizes.push(txt);
+                            }
+                        });
+                        if (sizes.length) size = sizes.join(', ');
+                    }
 
-            # Brand e SKU — due <p> con text-[10px]
-            p_tags = card.find_all("p", class_=lambda c: c and "text-\[10px\]" in c)
-            sku = None
-            for p in p_tags:
-                txt = p.get_text(strip=True)
-                # SKU ha font-mono
-                if p.get("class") and "font-mono" in " ".join(p.get("class", [])):
-                    sku = txt
-
-            # Taglia — div con mt-auto flex flex-wrap
-            size_container = card.find("div", class_=lambda c: c and "mt-auto" in c and "flex-wrap" in c)
-            size = "N/A"
-            if size_container:
-                size_tags = size_container.find_all(["span", "div", "p"])
-                sizes = [s.get_text(strip=True) for s in size_tags if s.get_text(strip=True).replace(".", "").isdigit()]
-                if sizes:
-                    size = ", ".join(sizes)
-
-            if name and len(name) > 3:
-                prodotti.append({
-                    "name": name,
-                    "sku": sku or "N/A",
-                    "size": size,
-                })
-                print(f"  ✅ {name} | {sku} | {size}")
-
+                    results.push({ name, sku, size });
+                });
+                return results;
+            }
+        """)
         print(f"  📊 Prodotti estratti: {len(prodotti)}")
+        for p in prodotti:
+            print(f"  ✅ {p['name']} | {p['sku']} | {p['size']}")
 
     except Exception as e:
         print(f"⚠️ Errore scraping WTB list: {e}")
