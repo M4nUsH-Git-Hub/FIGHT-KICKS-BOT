@@ -944,35 +944,46 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
             except Exception as e:
                 print(f"⚠️ Screenshot fallito: {e}")
 
-            # Estrai dati via JavaScript prima di chiudere il browser
+            # Debug: vedi cosa c'è nella pagina
+            debug = await page.evaluate("""
+            () => {
+                return {
+                    h2s: Array.from(document.querySelectorAll('h2')).slice(0,5).map(e => e.textContent.trim()),
+                    cursorDivs: document.querySelectorAll('div[class*="cursor-pointer"]').length,
+                    allDivs: document.querySelectorAll('div').length,
+                    bodyText: document.body.innerText.slice(0, 300),
+                }
+            }
+        """)
+            print(f"  🔍 Debug: {debug}")
+
+            # Estrai dati via JavaScript
             prodotti = await page.evaluate("""
             () => {
                 const results = [];
-                // Trova tutti i button/div con cursor-pointer che contengono h2
-                const cards = document.querySelectorAll('div[class*="cursor-pointer"]');
+                // Prova sia div che button con cursor-pointer
+                const cards = document.querySelectorAll('[class*="cursor-pointer"]');
                 cards.forEach(card => {
                     const h2 = card.querySelector('h2');
                     if (!h2) return;
                     const name = h2.textContent.trim();
                     if (name.length < 3) return;
 
-                    // SKU — p con font-mono
-                    const skuEl = card.querySelector('p[class*="font-mono"]');
+                    const skuEl = card.querySelector('[class*="font-mono"]');
                     const sku = skuEl ? skuEl.textContent.trim() : 'N/A';
 
-                    // Taglia — div con mt-auto
-                    const sizeContainer = card.querySelector('div[class*="mt-auto"]');
+                    const sizeContainer = card.querySelector('[class*="mt-auto"]');
                     let size = 'N/A';
                     if (sizeContainer) {
-                        const sizeEls = sizeContainer.querySelectorAll('span, div, p, button');
+                        const sizeEls = sizeContainer.querySelectorAll('*');
                         const sizes = [];
                         sizeEls.forEach(el => {
                             const txt = el.textContent.trim();
-                            if (txt && !isNaN(parseFloat(txt.replace(',', '.')))) {
+                            if (txt && !isNaN(parseFloat(txt.replace(',', '.'))) && txt.length < 6) {
                                 sizes.push(txt);
                             }
                         });
-                        if (sizes.length) size = sizes.join(', ');
+                        if (sizes.length) size = sizes[0];
                     }
 
                     results.push({ name, sku, size });
