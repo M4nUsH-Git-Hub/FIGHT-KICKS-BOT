@@ -917,11 +917,8 @@ WTB_LIST_URL = "https://www.wtbmarketlist.eu/list/734909407825100813"
 WTB_UPDATE_CHANNEL_ID = 1420780972340805754  # ⚠️ Sostituisci con l'ID del canale #wtb-update
 
 async def scrape_wtb_list() -> tuple[list, bytes | None]:
-    """
-    Scrapa wtbmarketlist.eu e restituisce (lista prodotti, screenshot PNG).
-    """
+    """Scrapa wtbmarketlist.eu — restituisce (lista prodotti, screenshot PNG)."""
     from playwright.async_api import async_playwright
-    from bs4 import BeautifulSoup
 
     prodotti = []
     screenshot = None
@@ -937,73 +934,57 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
             await page.goto(WTB_LIST_URL, wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(4000)
 
-            # Screenshot pagina
             try:
                 screenshot = await page.screenshot(full_page=False, type="png")
                 print(f"  📸 Screenshot: {len(screenshot)} bytes")
             except Exception as e:
                 print(f"⚠️ Screenshot fallito: {e}")
 
-            # Debug: vedi cosa c'è nella pagina
-            debug = await page.evaluate("""
-            () => {
-                return {
-                    h2s: Array.from(document.querySelectorAll('h2')).slice(0,5).map(e => e.textContent.trim()),
-                    cursorDivs: document.querySelectorAll('div[class*="cursor-pointer"]').length,
-                    allDivs: document.querySelectorAll('div').length,
-                    bodyText: document.body.innerText.slice(0, 300),
-                }
-            }
-        """)
-            print(f"  🔍 Debug: {debug}")
+            try:
+                debug = await page.evaluate("() => ({ h2s: Array.from(document.querySelectorAll('h2')).slice(0,5).map(e=>e.textContent.trim()), cursors: document.querySelectorAll('[class*=cursor-pointer]').length, divs: document.querySelectorAll('div').length })")
+                print(f"  🔍 Debug: {debug}")
+            except Exception as e:
+                print(f"⚠️ Debug eval fallito: {e}")
 
-            # Estrai dati via JavaScript
-            prodotti = await page.evaluate("""
-            () => {
-                const results = [];
-                // Prova sia div che button con cursor-pointer
-                const cards = document.querySelectorAll('[class*="cursor-pointer"]');
-                cards.forEach(card => {
-                    const h2 = card.querySelector('h2');
-                    if (!h2) return;
-                    const name = h2.textContent.trim();
-                    if (name.length < 3) return;
+            try:
+                prodotti = await page.evaluate("""() => {
+                    const results = [];
+                    const cards = document.querySelectorAll('[class*="cursor-pointer"]');
+                    cards.forEach(card => {
+                        const h2 = card.querySelector('h2');
+                        if (!h2) return;
+                        const name = h2.textContent.trim();
+                        if (name.length < 3) return;
+                        const skuEl = card.querySelector('[class*="font-mono"]');
+                        const sku = skuEl ? skuEl.textContent.trim() : 'N/A';
+                        const sizeContainer = card.querySelector('[class*="mt-auto"]');
+                        let size = 'N/A';
+                        if (sizeContainer) {
+                            const els = sizeContainer.querySelectorAll('*');
+                            const sizes = [];
+                            els.forEach(el => {
+                                const txt = el.textContent.trim();
+                                if (txt && !isNaN(parseFloat(txt.replace(',','.'))) && txt.length < 6) sizes.push(txt);
+                            });
+                            if (sizes.length) size = sizes[0];
+                        }
+                        results.push({ name, sku, size });
+                    });
+                    return results;
+                }""")
+                print(f"  📊 Prodotti estratti: {len(prodotti)}")
+                for p in prodotti:
+                    print(f"  ✅ {p['name']} | {p['sku']} | {p['size']}")
+            except Exception as e:
+                print(f"⚠️ Evaluate prodotti fallito: {e}")
 
-                    const skuEl = card.querySelector('[class*="font-mono"]');
-                    const sku = skuEl ? skuEl.textContent.trim() : 'N/A';
-
-                    const sizeContainer = card.querySelector('[class*="mt-auto"]');
-                    let size = 'N/A';
-                    if (sizeContainer) {
-                        const sizeEls = sizeContainer.querySelectorAll('*');
-                        const sizes = [];
-                        sizeEls.forEach(el => {
-                            const txt = el.textContent.trim();
-                            if (txt && !isNaN(parseFloat(txt.replace(',', '.'))) && txt.length < 6) {
-                                sizes.push(txt);
-                            }
-                        });
-                        if (sizes.length) size = sizes[0];
-                    }
-
-                    results.push({ name, sku, size });
-                });
-                return results;
-            }
-        """)
             await browser.close()
-
-        print(f"  📊 Prodotti estratti: {len(prodotti)}")
-        for p in prodotti:
-            print(f"  ✅ {p['name']} | {p['sku']} | {p['size']}")
 
     except Exception as e:
         print(f"⚠️ Errore scraping WTB list: {e}")
 
     return prodotti, screenshot
 
-
-@tree.command(name="wtbupdate", description="Invia la WTB List aggiornata nel canale")
 async def wtbupdate(interaction: discord.Interaction):
     if interaction.user.id != interaction.guild.owner_id:
         await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
