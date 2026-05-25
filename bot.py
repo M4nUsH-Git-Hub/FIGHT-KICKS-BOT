@@ -918,7 +918,8 @@ WTB_UPDATE_CHANNEL_ID = 1420780972340805754
 
 
 @tree.command(name="wtbupdate", description="Invia la WTB List aggiornata nel canale")
-async def wtbupdate(interaction: discord.Interaction):
+@app_commands.describe(immagine="URL immagine opzionale da allegare all'embed")
+async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
     if interaction.user.id != interaction.guild.owner_id:
         await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
         return
@@ -930,44 +931,20 @@ async def wtbupdate(interaction: discord.Interaction):
         await interaction.followup.send("❌ Canale WTB Update non trovato.", ephemeral=True)
         return
 
-    from playwright.async_api import async_playwright
-    import io
-
-    screenshot = None
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 800},
-            )
-            page = await context.new_page()
-            await page.goto(WTB_LIST_URL, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(10000)
-            screenshot = await page.screenshot(full_page=False, type="png")
-            await browser.close()
-            print(f"📸 Screenshot: {len(screenshot)} bytes")
-    except Exception as e:
-        print(f"⚠️ Screenshot fallito: {e}")
-
     embed = discord.Embed(
         title="WTB LIST UPDATE",
         url=WTB_LIST_URL,
         color=discord.Color(0x575553),
         timestamp=discord.utils.utcnow(),
     )
-    embed.set_footer(text="WTB List Update", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png")
+    embed.set_footer(text="WTB Update", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png")
 
-    if screenshot:
-        file = discord.File(fp=io.BytesIO(screenshot), filename="wtb_list.png")
-        embed.set_image(url="attachment://wtb_list.png")
-        await channel.send(embed=embed, file=file)
-    else:
-        embed.description = f"[Vedi lista completa]({WTB_LIST_URL})"
-        await channel.send(embed=embed)
+    if immagine:
+        embed.set_image(url=immagine)
 
+    await channel.send(embed=embed)
     await interaction.followup.send("✅ WTB Update inviato!", ephemeral=True)
-    print("✅ WTB Update inviato")
+    print(f"✅ WTB Update inviato | img: {'✅' if immagine else '❌'}")
 
 
 # ── Webhook Manager ───────────────────────────────────────────────────────────
