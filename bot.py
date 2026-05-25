@@ -942,7 +942,7 @@ async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
     if immagine:
         embed.set_image(url=immagine)
 
-    await channel.send(content="<@&1427396900801347594>", embed=embed)
+    await channel.send(content="||<@&1427396900801347594>||", embed=embed)
     await interaction.followup.send("✅ WTB Update inviato!", ephemeral=True)
     print(f"✅ WTB Update inviato | img: {'✅' if immagine else '❌'}")
 
