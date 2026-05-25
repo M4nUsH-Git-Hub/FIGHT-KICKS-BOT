@@ -968,6 +968,8 @@ async def webhook_add(interaction: discord.Interaction, url: str):
     if not ("discord.com/api" in url and "webhooks" in url):
         await interaction.response.send_message("❌ URL webhook non valido.", ephemeral=True)
         return
+    # Normalizza — rimuove /v10 se presente
+    url = url.replace("/api/v10/webhooks/", "/api/webhooks/")
     webhooks = get_webhooks()
     if url in webhooks:
         await interaction.response.send_message("ℹ️ Webhook già presente.", ephemeral=True)
@@ -984,10 +986,13 @@ async def webhook_remove(interaction: discord.Interaction, url: str):
         await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
         return
     webhooks = get_webhooks()
-    if url not in webhooks:
+    # Normalizza entrambi — rimuove /v10 per confronto
+    url_norm = url.replace("/api/v10/webhooks/", "/api/webhooks/")
+    match = next((w for w in webhooks if w.replace("/api/v10/webhooks/", "/api/webhooks/") == url_norm), None)
+    if not match:
         await interaction.response.send_message("ℹ️ Webhook non trovato.", ephemeral=True)
         return
-    webhooks.remove(url)
+    webhooks.remove(match)
     save_webhooks(webhooks)
     await interaction.response.send_message(f"✅ Webhook rimosso. Totale: {len(webhooks)}", ephemeral=True)
 
