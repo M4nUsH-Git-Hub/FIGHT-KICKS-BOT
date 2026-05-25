@@ -934,6 +934,7 @@ def save_webhooks(webhooks: list):
 async def send_to_webhooks(embed: discord.Embed):
     """Invia l'embed a tutti i webhook salvati in parallelo."""
     import aiohttp
+    import asyncio
     webhooks = get_webhooks()
     if not webhooks:
         return
