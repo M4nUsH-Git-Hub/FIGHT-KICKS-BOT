@@ -985,6 +985,7 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
 
     return prodotti, screenshot
 
+@tree.command(name="wtbupdate", description="Invia la WTB List aggiornata nel canale")
 async def wtbupdate(interaction: discord.Interaction):
     if interaction.user.id != interaction.guild.owner_id:
         await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
