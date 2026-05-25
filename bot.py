@@ -914,15 +914,26 @@ async def wtb_error(interaction: discord.Interaction, error: app_commands.AppCom
 # ── WTB Update Command ────────────────────────────────────────────────────────
 
 WTB_LIST_URL = "https://www.wtbmarketlist.eu/list/734909407825100813"
-WTB_UPDATE_CHANNEL_ID = 1420780972340805754  # ⚠️ Sostituisci con l'ID del canale #wtb-update
+WTB_UPDATE_CHANNEL_ID = 1420780972340805754
 
-async def scrape_wtb_list() -> tuple[list, bytes | None]:
-    """Scrapa wtbmarketlist.eu — restituisce (lista prodotti, screenshot PNG)."""
+
+@tree.command(name="wtbupdate", description="Invia la WTB List aggiornata nel canale")
+async def wtbupdate(interaction: discord.Interaction):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    channel = interaction.guild.get_channel(WTB_UPDATE_CHANNEL_ID)
+    if not channel:
+        await interaction.followup.send("❌ Canale WTB Update non trovato.", ephemeral=True)
+        return
+
     from playwright.async_api import async_playwright
+    import io
 
-    prodotti = []
     screenshot = None
-
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -932,105 +943,31 @@ async def scrape_wtb_list() -> tuple[list, bytes | None]:
             )
             page = await context.new_page()
             await page.goto(WTB_LIST_URL, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(10000)  # Attesa extra per superare check browser
-
-            try:
-                screenshot = await page.screenshot(full_page=False, type="png")
-                print(f"  📸 Screenshot: {len(screenshot)} bytes")
-            except Exception as e:
-                print(f"⚠️ Screenshot fallito: {e}")
-
-            try:
-                debug = await page.evaluate("() => ({ h2s: Array.from(document.querySelectorAll('h2')).slice(0,5).map(e=>e.textContent.trim()), cursors: document.querySelectorAll('[class*=cursor-pointer]').length, divs: document.querySelectorAll('div').length })")
-                print(f"  🔍 Debug: {debug}")
-            except Exception as e:
-                print(f"⚠️ Debug eval fallito: {e}")
-
-            try:
-                prodotti = await page.evaluate("""() => {
-                    const results = [];
-                    const cards = document.querySelectorAll('[class*="cursor-pointer"]');
-                    cards.forEach(card => {
-                        const h2 = card.querySelector('h2');
-                        if (!h2) return;
-                        const name = h2.textContent.trim();
-                        if (name.length < 3) return;
-                        const skuEl = card.querySelector('[class*="font-mono"]');
-                        const sku = skuEl ? skuEl.textContent.trim() : 'N/A';
-                        const sizeContainer = card.querySelector('[class*="mt-auto"]');
-                        let size = 'N/A';
-                        if (sizeContainer) {
-                            const els = sizeContainer.querySelectorAll('*');
-                            const sizes = [];
-                            els.forEach(el => {
-                                const txt = el.textContent.trim();
-                                if (txt && !isNaN(parseFloat(txt.replace(',','.'))) && txt.length < 6) sizes.push(txt);
-                            });
-                            if (sizes.length) size = sizes[0];
-                        }
-                        results.push({ name, sku, size });
-                    });
-                    return results;
-                }""")
-                print(f"  📊 Prodotti estratti: {len(prodotti)}")
-                for p in prodotti:
-                    print(f"  ✅ {p['name']} | {p['sku']} | {p['size']}")
-            except Exception as e:
-                print(f"⚠️ Evaluate prodotti fallito: {e}")
-
+            await page.wait_for_timeout(10000)
+            screenshot = await page.screenshot(full_page=False, type="png")
             await browser.close()
-
+            print(f"📸 Screenshot: {len(screenshot)} bytes")
     except Exception as e:
-        print(f"⚠️ Errore scraping WTB list: {e}")
-
-    return prodotti, screenshot
-
-@tree.command(name="wtbupdate", description="Invia la WTB List aggiornata nel canale")
-async def wtbupdate(interaction: discord.Interaction):
-    if interaction.user.id != interaction.guild.owner_id:
-        await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
-        return
-
-    await interaction.response.defer(ephemeral=True)
-    print(f"🔍 Scraping WTB list: {WTB_LIST_URL}")
-
-    prodotti, screenshot = await scrape_wtb_list()
-
-    channel = interaction.guild.get_channel(WTB_UPDATE_CHANNEL_ID)
-    if not channel:
-        await interaction.followup.send("❌ Canale WTB Update non trovato.", ephemeral=True)
-        return
+        print(f"⚠️ Screenshot fallito: {e}")
 
     embed = discord.Embed(
         title="WTB LIST UPDATE",
+        url=WTB_LIST_URL,
         color=discord.Color(0x575553),
         timestamp=discord.utils.utcnow(),
     )
+    embed.set_footer(text="WTB List Update", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png")
 
-    if prodotti:
-        lines = []
-        for p in prodotti:
-            lines.append(f"• {p['name']} – {p['sku']} – {p['size']}")
-        embed.description = "\n".join(lines)
-    else:
-        embed.description = f"[Vedi lista completa]({WTB_LIST_URL})"
-
-    embed.set_footer(text="FIGHT KICKS – WTB LIST UPDATE", icon_url=FOOTER_ICON_WTB)
-
-    # Invia screenshot come file allegato se disponibile
     if screenshot:
-        import io
         file = discord.File(fp=io.BytesIO(screenshot), filename="wtb_list.png")
         embed.set_image(url="attachment://wtb_list.png")
         await channel.send(embed=embed, file=file)
     else:
+        embed.description = f"[Vedi lista completa]({WTB_LIST_URL})"
         await channel.send(embed=embed)
 
     await interaction.followup.send("✅ WTB Update inviato!", ephemeral=True)
-    print(f"✅ WTB Update inviato — {len(prodotti)} prodotti")
-
-
-
+    print("✅ WTB Update inviato")
 
 
 # ── Webhook Manager ───────────────────────────────────────────────────────────
