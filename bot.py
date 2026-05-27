@@ -43,7 +43,11 @@ def load_config() -> dict:
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read().decode())
-            raw = result["files"]["config.json"]["content"]
+            files = result.get("files", {})
+            file_key = next((k for k in files if k.endswith(".json") or k == "config.json"), next(iter(files), None))
+            if not file_key:
+                raise KeyError("Nessun file trovato nel Gist")
+            raw = files[file_key]["content"]
             data = json.loads(raw)
             _config_cache = data
             # Backup locale
