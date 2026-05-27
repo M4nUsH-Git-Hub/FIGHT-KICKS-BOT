@@ -1,4 +1,4 @@
-"""
+ù"""
 Discord Ping Backup Bot — PINGER ONLY
 ======================================
 Archivia automaticamente tutti i messaggi con @everyone, @here o menzioni di ruolo
@@ -30,7 +30,7 @@ _config_cache = {}
 def load_config() -> dict:
     """Carica config da GitHub Gist, fallback su file locale."""
     global _config_cache
-    print(f"🔧 load_config chiamato — Gist ID: {GITHUB_GIST_ID}")
+    print(f"🔧 load_config chiamato — Gist ID: {GITHUB_GIST_ID}", flush=True)
     try:
         req = urllib.request.Request(
             f"https://api.github.com/gists/{GITHUB_GIST_ID}",
@@ -271,8 +271,11 @@ def build_embed(message: discord.Message) -> discord.Embed:
 @bot.event
 async def on_ready():
     await tree.sync()
-    print(f"✅ Bot online come {bot.user} (ID: {bot.user.id})")
-    print("Comandi slash sincronizzati globalmente.")
+    print(f"✅ Bot online come {bot.user} (ID: {bot.user.id})", flush=True)
+    print("Comandi slash sincronizzati globalmente.", flush=True)
+    # Test connessione Gist
+    cfg = load_config()
+    print(f"📦 Config caricata — {len(cfg.get('wtb_webhooks', []))} webhook", flush=True)
 
 
 # ── Gruppo comandi slash /pingbackup ──────────────────────────────────────────
