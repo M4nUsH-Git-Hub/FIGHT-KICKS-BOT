@@ -19,24 +19,82 @@ import os
 import re
 from datetime import datetime, timezone
 
-# ── Percorso file di configurazione ───────────────────────────────────────────
+# ── Configurazione persistente via GitHub Gist ────────────────────────────────
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+GITHUB_TOKEN = "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"
+GITHUB_GIST_ID = "6cda801fb93b5515a36bfab543a5d0e1"
+
+_config_cache = {}
 
 
 def load_config() -> dict:
+    """Carica config da GitHub Gist, fallback su file locale."""
+    global _config_cache
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{GITHUB_GIST_ID}",
+            headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json",
+            },
+            method="GET"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode())
+            raw = result["files"]["config.json"]["content"]
+            data = json.loads(raw)
+            _config_cache = data
+            # Backup locale
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return data
+    except Exception as e:
+        print(f"⚠️ Gist load fallito ({e}), uso file locale")
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+            data = json.load(f)
+            _config_cache = data
+            return data
+    return _config_cache or {}
 
 
 def save_config(data: dict):
+    """Salva config su GitHub Gist e file locale come backup."""
+    global _config_cache
+    _config_cache = data
+
+    # Salva file locale
     tmp = CONFIG_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, CONFIG_FILE)
+
+    # Aggiorna Gist
+    try:
+        payload = json.dumps({
+            "files": {
+                "config.json": {
+                    "content": json.dumps(data, indent=2, ensure_ascii=False)
+                }
+            }
+        }).encode()
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{GITHUB_GIST_ID}",
+            data=payload,
+            headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+            method="PATCH"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+            print("✅ Config salvata su Gist")
+    except Exception as e:
+        print(f"⚠️ Gist save fallito ({e}), salvato solo in locale")
 
 
 def get_guild_config(guild_id: int) -> dict:
@@ -942,7 +1000,7 @@ async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
     if immagine:
         embed.set_image(url=immagine)
 
-    await channel.send(content="<@&1427396900801347594>", embed=embed)
+    await channel.send(content="||<@&1427396900801347594>||", embed=embed)
     await interaction.followup.send("✅ WTB Update inviato!", ephemeral=True)
     print(f"✅ WTB Update inviato | img: {'✅' if immagine else '❌'}")
 
