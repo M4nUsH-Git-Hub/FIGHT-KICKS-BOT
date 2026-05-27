@@ -30,6 +30,7 @@ _config_cache = {}
 def load_config() -> dict:
     """Carica config da GitHub Gist, fallback su file locale."""
     global _config_cache
+    print(f"🔧 load_config chiamato — Gist ID: {GITHUB_GIST_ID}")
     try:
         req = urllib.request.Request(
             f"https://api.github.com/gists/{GITHUB_GIST_ID}",
