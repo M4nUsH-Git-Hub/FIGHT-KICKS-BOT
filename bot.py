@@ -1528,11 +1528,27 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
     save_giveaways(giveaways)
 
 
+def migrate_giveaway(g: dict) -> dict:
+    """Migrazione: converte host_id (vecchio formato) in host (nuovo formato)."""
+    if "host" not in g and "host_id" in g:
+        g["host"] = f"<@{g['host_id']}>"
+    return g
+
+
 @tasks.loop(seconds=30)
 async def giveaway_check():
     """Ogni 30s: chiude i giveaway scaduti e aggiorna le entries di quelli attivi."""
     now = datetime.now(timezone.utc).timestamp()
     giveaways = get_giveaways()
+
+    # Migra eventuali record in vecchio formato
+    changed = False
+    for gid, g in giveaways.items():
+        if "host" not in g:
+            migrate_giveaway(g)
+            changed = True
+    if changed:
+        save_giveaways(giveaways)
 
     expired = [gid for gid, g in giveaways.items() if g["end_ts"] <= now]
     for gid in expired:
@@ -1553,7 +1569,7 @@ async def giveaway_check():
             prize=g["prize"],
             end_ts=g["end_ts"],
             winners_count=g["winners_count"],
-            host=g["host"],
+            host=g.get("host", "—"),
             entries=entries,
         )
         await message.edit(embed=updated_embed)
