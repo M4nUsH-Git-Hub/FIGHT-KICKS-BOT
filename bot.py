@@ -13,11 +13,12 @@ Comandi slash:
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 import json
 import os
 import urllib.request
 import re
+import random
 from datetime import datetime, timezone
 
 # ── Configurazione persistente via GitHub Gist ────────────────────────────────
@@ -281,6 +282,9 @@ async def on_ready():
     # Test connessione Gist
     cfg = load_config()
     print(f"📦 Config caricata — {len(cfg.get('wtb_webhooks', []))} webhook", flush=True)
+    # Avvia task giveaway
+    if not giveaway_check.is_running():
+        giveaway_check.start()
 
 
 # ── Gruppo comandi slash /pingbackup ──────────────────────────────────────────
@@ -1389,6 +1393,260 @@ async def webhook_clear(interaction: discord.Interaction):
 
 
 tree.add_command(webhook_group)
+
+
+# ── Sistema Giveaway ──────────────────────────────────────────────────────────
+
+GIVEAWAY_EMOJI  = "🎉"
+GIVEAWAY_COLOR  = discord.Color(0x575553)
+GIVEAWAY_FOOTER = "Giveaway"
+GIVEAWAY_ICON   = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
+
+
+def parse_duration(raw: str) -> int | None:
+    """Converte '1d', '12h', '30m', '60s' in secondi. Ritorna None se non valido."""
+    raw = raw.strip().lower()
+    units = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    if raw and raw[-1] in units:
+        try:
+            return int(raw[:-1]) * units[raw[-1]]
+        except ValueError:
+            return None
+    return None
+
+
+def format_duration(seconds: int) -> str:
+    """Converte secondi in stringa leggibile."""
+    if seconds >= 86400:
+        v = seconds // 86400
+        return f"{v} giorno{'i' if v > 1 else ''}"
+    if seconds >= 3600:
+        v = seconds // 3600
+        return f"{v} ora{'e' if v > 1 else ''}"
+    if seconds >= 60:
+        v = seconds // 60
+        return f"{v} minuto{'i' if v > 1 else ''}"
+    return f"{seconds} secondo{'i' if seconds > 1 else ''}"
+
+
+def get_giveaways() -> dict:
+    cfg = load_config()
+    return cfg.get("giveaways", {})
+
+
+def save_giveaways(giveaways: dict):
+    cfg = load_config()
+    cfg["giveaways"] = giveaways
+    save_config(cfg)
+
+
+def build_giveaway_embed(
+    prize: str,
+    end_ts: float,
+    winners_count: int,
+    host_id: int,
+    ended: bool = False,
+    winner_ids: list[int] | None = None,
+) -> discord.Embed:
+    discord_ts = f"<t:{int(end_ts)}:f>"
+    now = datetime.now(timezone.utc).timestamp()
+    remaining = max(0, int(end_ts - now))
+
+    if ended:
+        title = f"🎊 {prize}"
+        if winner_ids:
+            winners_str = ", ".join(f"<@{wid}>" for wid in winner_ids)
+            description = f"**Vincitori:** {winners_str}"
+        else:
+            description = "Nessun partecipante valido."
+        end_label = "Terminato"
+    else:
+        title = prize
+        description = f"Reagisci con {GIVEAWAY_EMOJI} per partecipare!"
+        end_label = GIVEAWAY_FOOTER
+
+    embed = discord.Embed(title=title, description=description, color=GIVEAWAY_COLOR)
+
+    if not ended:
+        embed.add_field(
+            name="Scadenza",
+            value=f"in {format_duration(remaining)} ({discord_ts})",
+            inline=False,
+        )
+    else:
+        embed.add_field(name="Terminato", value=discord_ts, inline=False)
+
+    embed.add_field(name="Ospitato da", value=f"<@{host_id}>", inline=True)
+    embed.add_field(name="Vincitori", value=str(winners_count), inline=True)
+    embed.set_footer(text=end_label, icon_url=GIVEAWAY_ICON)
+    return embed
+
+
+async def conclude_giveaway(giveaway_id: str, giveaway: dict):
+    """Estrae i vincitori, aggiorna l'embed e notifica il canale."""
+    channel = bot.get_channel(giveaway["channel_id"])
+    if channel is None:
+        return
+    try:
+        message = await channel.fetch_message(giveaway["message_id"])
+    except discord.NotFound:
+        return
+
+    participants = []
+    for reaction in message.reactions:
+        if str(reaction.emoji) == GIVEAWAY_EMOJI:
+            async for user in reaction.users():
+                if not user.bot:
+                    participants.append(user.id)
+
+    winners_count = giveaway["winners_count"]
+    winner_ids = random.sample(participants, min(winners_count, len(participants))) if participants else []
+
+    ended_embed = build_giveaway_embed(
+        prize=giveaway["prize"],
+        end_ts=giveaway["end_ts"],
+        winners_count=winners_count,
+        host_id=giveaway["host_id"],
+        ended=True,
+        winner_ids=winner_ids,
+    )
+    await message.edit(embed=ended_embed)
+
+    if winner_ids:
+        winners_mention = " ".join(f"<@{wid}>" for wid in winner_ids)
+        await channel.send(
+            f"🎊 Congratulazioni {winners_mention}! Hai vinto **{giveaway['prize']}**!\n"
+            f"*(Ospitato da <@{giveaway['host_id']}>)*"
+        )
+    else:
+        await channel.send(
+            f"❌ Il giveaway per **{giveaway['prize']}** è terminato senza partecipanti validi."
+        )
+
+    giveaways = get_giveaways()
+    giveaways.pop(giveaway_id, None)
+    save_giveaways(giveaways)
+
+
+@tasks.loop(seconds=30)
+async def giveaway_check():
+    """Controlla ogni 30 secondi se ci sono giveaway scaduti."""
+    now = datetime.now(timezone.utc).timestamp()
+    giveaways = get_giveaways()
+    expired = [gid for gid, g in giveaways.items() if g["end_ts"] <= now]
+    for gid in expired:
+        await conclude_giveaway(gid, giveaways[gid])
+
+
+class GiveawayGroup(app_commands.Group):
+    def __init__(self):
+        super().__init__(name="giveaway", description="Gestione giveaway del server")
+
+
+giveaway_group = GiveawayGroup()
+
+
+@giveaway_group.command(name="start", description="Avvia un nuovo giveaway")
+@app_commands.describe(
+    premio="Cosa si vince (es: '2GB Flaming Proxies')",
+    durata="Durata del giveaway (es: 1d, 12h, 30m)",
+    vincitori="Numero di vincitori (default: 1)",
+    canale="Canale dove postare il giveaway (default: canale corrente)",
+)
+async def giveaway_start(
+    interaction: discord.Interaction,
+    premio: str,
+    durata: str,
+    vincitori: app_commands.Range[int, 1, 20] = 1,
+    canale: discord.TextChannel = None,
+):
+    if not (
+        interaction.user.id == interaction.guild.owner_id
+        or interaction.user.guild_permissions.administrator
+    ):
+        await interaction.response.send_message(
+            "❌ Solo il proprietario o un amministratore può creare giveaway.", ephemeral=True
+        )
+        return
+
+    seconds = parse_duration(durata)
+    if seconds is None or seconds < 30:
+        await interaction.response.send_message(
+            "❌ Durata non valida. Usa il formato: `30s`, `10m`, `2h`, `1d` (minimo 30 secondi).",
+            ephemeral=True,
+        )
+        return
+
+    target_channel = canale or interaction.channel
+    end_ts = datetime.now(timezone.utc).timestamp() + seconds
+
+    embed = build_giveaway_embed(
+        prize=premio,
+        end_ts=end_ts,
+        winners_count=vincitori,
+        host_id=interaction.user.id,
+    )
+
+    await interaction.response.send_message("✅ Giveaway avviato!", ephemeral=True)
+    giveaway_msg = await target_channel.send(embed=embed)
+    await giveaway_msg.add_reaction(GIVEAWAY_EMOJI)
+
+    giveaways = get_giveaways()
+    giveaways[str(giveaway_msg.id)] = {
+        "message_id": giveaway_msg.id,
+        "channel_id": target_channel.id,
+        "guild_id": interaction.guild.id,
+        "prize": premio,
+        "end_ts": end_ts,
+        "winners_count": vincitori,
+        "host_id": interaction.user.id,
+    }
+    save_giveaways(giveaways)
+
+
+@giveaway_group.command(name="cancel", description="Annulla un giveaway attivo")
+@app_commands.describe(message_id="ID del messaggio del giveaway da annullare")
+async def giveaway_cancel(interaction: discord.Interaction, message_id: str):
+    if not (
+        interaction.user.id == interaction.guild.owner_id
+        or interaction.user.guild_permissions.administrator
+    ):
+        await interaction.response.send_message(
+            "❌ Solo il proprietario o un amministratore può annullare giveaway.", ephemeral=True
+        )
+        return
+
+    giveaways = get_giveaways()
+    giveaway = giveaways.get(message_id)
+
+    if giveaway is None:
+        await interaction.response.send_message(
+            "❌ Nessun giveaway attivo trovato con quell'ID.", ephemeral=True
+        )
+        return
+
+    channel = bot.get_channel(giveaway["channel_id"])
+    if channel:
+        try:
+            msg = await channel.fetch_message(giveaway["message_id"])
+            cancelled_embed = discord.Embed(
+                title=f"~~{giveaway['prize']}~~",
+                description="❌ Questo giveaway è stato annullato.",
+                color=GIVEAWAY_COLOR,
+            )
+            cancelled_embed.set_footer(text=GIVEAWAY_FOOTER, icon_url=GIVEAWAY_ICON)
+            await msg.edit(embed=cancelled_embed)
+        except discord.NotFound:
+            pass
+
+    giveaways.pop(message_id, None)
+    save_giveaways(giveaways)
+    await interaction.response.send_message(
+        f"✅ Giveaway **{giveaway['prize']}** annullato.", ephemeral=True
+    )
+
+
+tree.add_command(giveaway_group)
 
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
