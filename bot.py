@@ -1016,12 +1016,30 @@ async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
 
 
 # ── Instagram Downloader ──────────────────────────────────────────────────────
-# Per funzionare con Instagram devi fornire i cookie di una sessione autenticata.
-# Esporta i cookie dal browser (estensione "Get cookies.txt LOCALLY") mentre sei
-# loggato su Instagram, salvali come "instagram_cookies.txt" nella stessa cartella
-# del bot, oppure imposta la variabile d'ambiente IG_COOKIES_FILE con il path.
+# Supporta: video, reel, foto singola, carosello (foto+video misti), storie
+# Richiede cookie Instagram nella variabile d'ambiente IG_COOKIES (contenuto
+# del file cookies.txt) oppure IG_COOKIES_FILE (path al file).
 
-@tree.command(name="ig", description="Scarica un video o foto da Instagram")
+def _get_ig_cookies_file() -> str | None:
+    """Risolve il file cookie da env IG_COOKIES o IG_COOKIES_FILE."""
+    import os
+    path = os.environ.get("IG_COOKIES_FILE")
+    if path and os.path.isfile(path):
+        return path
+    content = os.environ.get("IG_COOKIES")
+    if content:
+        tmp = "/tmp/instagram_cookies.txt"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(content)
+        print("🍪 Cookie scritti da IG_COOKIES")
+        return tmp
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instagram_cookies.txt")
+    if os.path.isfile(local):
+        return local
+    return None
+
+
+@tree.command(name="ig", description="Scarica video, reel, foto, carosello o storia da Instagram")
 @app_commands.describe(url="URL del post/reel/storia Instagram")
 async def ig_download(interaction: discord.Interaction, url: str):
     if interaction.user.id != interaction.guild.owner_id:
@@ -1033,116 +1051,126 @@ async def ig_download(interaction: discord.Interaction, url: str):
     import tempfile, os, asyncio
     import yt_dlp
 
-    # Gestione cookie: da variabile env IG_COOKIES (contenuto) oppure IG_COOKIES_FILE (path)
-    cookies_file = os.environ.get("IG_COOKIES_FILE")
+    cookies_file = _get_ig_cookies_file()
+    if cookies_file:
+        print(f"🍪 Cookie file: {cookies_file}")
+    else:
+        print("⚠️ Nessun cookie — download senza autenticazione")
 
-    if not cookies_file:
-        ig_cookies_content = os.environ.get("IG_COOKIES")
-        if ig_cookies_content:
-            tmp_cookies = "/tmp/instagram_cookies.txt"
-            with open(tmp_cookies, "w") as f:
-                f.write(ig_cookies_content)
-            cookies_file = tmp_cookies
-            print("🍪 Cookie caricati da variabile d'ambiente IG_COOKIES")
-        else:
-            local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instagram_cookies.txt")
-            if os.path.isfile(local_path):
-                cookies_file = local_path
+    IG_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+            "Mobile/15E148 Safari/604.1"
+        ),
+        "Accept": "*/*",
+        "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://www.instagram.com/",
+        "Origin": "https://www.instagram.com",
+    }
+
+    MAX_BYTES = 25 * 1024 * 1024  # 25 MB — limite Discord
+
+    def build_opts(outdir: str) -> dict:
+        opts = {
+            "outtmpl": os.path.join(outdir, "%(playlist_index)s_%(id)s.%(ext)s"),
+            "quiet": False,
+            "no_warnings": False,
+            # Priorità: video con audio → solo video → solo audio → immagine
+            "format": (
+                "bestvideo[ext=mp4][filesize<25M]+bestaudio[ext=m4a]"
+                "/bestvideo[filesize<25M]+bestaudio"
+                "/best[filesize<25M]"
+                "/best"
+            ),
+            "merge_output_format": "mp4",
+            "postprocessors": [{
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4",
+            }],
+            "writethumbnail": True,          # salva le foto come thumbnail
+            "skip_download": False,
+            "extract_flat": False,
+            "noplaylist": False,             # scarica tutto il carosello
+            "ignore_no_formats_error": True, # non crashare su foto senza stream
+            "http_headers": IG_HEADERS,
+            "verbose": True,
+        }
+        if cookies_file:
+            opts["cookiefile"] = cookies_file
+        return opts
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = os.path.join(tmpdir, "%(id)s.%(ext)s")
-
-            ydl_opts = {
-                "outtmpl": output_path,
-                "quiet": False,
-                "no_warnings": False,
-                # Scarica il miglior formato entro 25 MB
-                "format": "best[filesize<25M]/best",
-                "verbose": True,
-                # Headers che simulano un browser reale
-                "http_headers": {
-                    "User-Agent": (
-                        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
-                        "Mobile/15E148 Safari/604.1"
-                    ),
-                    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Accept": "*/*",
-                    "Referer": "https://www.instagram.com/",
-                    "Origin": "https://www.instagram.com",
-                },
-                # Estrae anche le entry della playlist (post con più foto/video)
-                "extract_flat": False,
-                "noplaylist": False,
-            }
-
-            # Aggiunge i cookie se disponibili
-            if cookies_file and os.path.isfile(cookies_file):
-                ydl_opts["cookiefile"] = cookies_file
-                print(f"🍪 Cookie file caricato: {cookies_file}")
-            else:
-                print("⚠️ Nessun cookie disponibile — download senza autenticazione")
-
             loop = asyncio.get_event_loop()
 
             def download():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    return info
+                with yt_dlp.YoutubeDL(build_opts(tmpdir)) as ydl:
+                    return ydl.extract_info(url, download=True)
 
             info = await loop.run_in_executor(None, download)
 
-            # Se è una playlist (post con più elementi) prendi il primo entry
-            if info.get("_type") == "playlist":
-                entries = info.get("entries") or []
-                if not entries:
-                    await interaction.followup.send("❌ Nessun contenuto trovato nel post.", ephemeral=True)
-                    return
-                info = entries[0]
+            # Raccogli tutti i file scaricati, ordinati per nome
+            all_files = sorted(
+                [f for f in os.listdir(tmpdir) if os.path.isfile(os.path.join(tmpdir, f))],
+                key=lambda f: f.lower()
+            )
 
-            # Trova i file scaricati
-            files = os.listdir(tmpdir)
-            if not files:
+            if not all_files:
                 await interaction.followup.send("❌ Nessun file scaricato.", ephemeral=True)
                 return
 
-            title = (info.get("title") or info.get("id") or "Instagram")[:50]
-            sent = 0
+            # Titolo dal primo entry disponibile
+            if info.get("_type") == "playlist":
+                entries = [e for e in (info.get("entries") or []) if e]
+                title = (entries[0].get("title") or entries[0].get("id") if entries else info.get("title") or "Instagram")
+            else:
+                title = info.get("title") or info.get("id") or "Instagram"
+            title = str(title)[:50]
 
-            for filename in files:
+            sent = 0
+            too_large = []
+
+            for filename in all_files:
                 filepath = os.path.join(tmpdir, filename)
                 size = os.path.getsize(filepath)
-
-                if size > 25 * 1024 * 1024:
-                    direct_url = info.get("url", url)
-                    await interaction.followup.send(
-                        f"⚠️ File troppo grande ({size // 1024 // 1024}MB)\n🔗 {direct_url}",
-                        ephemeral=True
-                    )
-                else:
-                    file = discord.File(filepath, filename=filename)
-                    await interaction.followup.send(
-                        content=f"📥 **{title}**" if sent == 0 else "",
-                        file=file,
-                        ephemeral=True
-                    )
-                    print(f"✅ IG download: {title} ({size // 1024}KB)")
+                if size == 0:
+                    continue
+                if size > MAX_BYTES:
+                    too_large.append(f"`{filename}` ({size // 1024 // 1024}MB)")
+                    continue
+                # Estensioni da inviare come file (ignora file di supporto)
+                ext = filename.rsplit(".", 1)[-1].lower()
+                if ext in ("json", "part", "ytdl"):
+                    continue
+                discord_file = discord.File(filepath, filename=filename)
+                content = f"📥 **{title}**" if sent == 0 else None
+                await interaction.followup.send(content=content, file=discord_file, ephemeral=True)
+                print(f"✅ IG: {filename} ({size // 1024}KB)")
                 sent += 1
+
+            if too_large:
+                await interaction.followup.send(
+                    "⚠️ File troppo grandi per Discord (>25MB):\n" + "\n".join(too_large),
+                    ephemeral=True
+                )
+
+            if sent == 0 and not too_large:
+                await interaction.followup.send("❌ Nessun contenuto inviabile trovato.", ephemeral=True)
 
     except Exception as e:
         err = str(e)
-        print(f"⚠️ IG download errore: {err}")
-        # Messaggio di errore più leggibile
-        if "login" in err.lower() or "checkpoint" in err.lower() or "cookie" in err.lower():
-            msg = "❌ Instagram richiede l'autenticazione. Aggiungi il file `instagram_cookies.txt` nella cartella del bot."
-        elif "Private" in err or "private" in err:
-            msg = "❌ Il post è privato e non accessibile."
-        elif "0 items" in err or "no video" in err.lower():
-            msg = "❌ Nessun contenuto scaricabile trovato. Prova con i cookie Instagram."
+        print(f"⚠️ IG errore: {err}")
+        if any(k in err.lower() for k in ("login", "checkpoint", "cookie", "auth")):
+            msg = "❌ Instagram richiede autenticazione. Controlla la variabile `IG_COOKIES` su Railway."
+        elif "private" in err.lower():
+            msg = "❌ Il post è privato."
+        elif "not found" in err.lower() or "404" in err:
+            msg = "❌ Post non trovato o URL non valido."
         else:
-            msg = f"❌ Errore: {err[:200]}"
+            msg = f"❌ Errore: {err[:300]}"
         await interaction.followup.send(msg, ephemeral=True)
+
 
 
 # ── Webhook Manager ───────────────────────────────────────────────────────────
