@@ -1115,6 +1115,11 @@ async def ig_download(interaction: discord.Interaction, url: str):
                 return
 
             print(f"📋 {len(entries)} elemento/i")
+            for i, e in enumerate(entries):
+                fmts = e.get("formats") or []
+                has_v = any(f.get("vcodec") not in (None, "none", "") for f in fmts)
+                thumb = e.get("thumbnail", "")[:60]
+                print(f"  [{i+1}] has_video={has_v} formats={len(fmts)} thumb={'✅' if thumb else '❌'} id={e.get('id')}")
 
             # ── Passata 2: scarica i video con ignoreerrors ───────────────────
             def download_videos():
