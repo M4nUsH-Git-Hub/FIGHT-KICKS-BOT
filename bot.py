@@ -1044,7 +1044,7 @@ async def ig_download(interaction: discord.Interaction, url: str):
 
     await interaction.response.defer(ephemeral=True)
 
-    import tempfile, os, asyncio, aiohttp, urllib.request
+    import tempfile, os, asyncio, aiohttp
     import yt_dlp
 
     cookies_file = _get_ig_cookies_file()
@@ -1063,17 +1063,17 @@ async def ig_download(interaction: discord.Interaction, url: str):
     }
     MAX_BYTES = 25 * 1024 * 1024
 
-    def base_opts(outdir=None):
+    def make_opts(outdir=None, **extra):
         o = {
             "quiet": True,
             "no_warnings": True,
-            "ignoreerrors": True,   # non crashare MAI su singoli item
             "http_headers": IG_HEADERS,
         }
         if cookies_file:
             o["cookiefile"] = cookies_file
         if outdir:
-            o["outtmpl"] = os.path.join(outdir, "%(playlist_index)s_%(id)s.%(ext)s")
+            o["outtmpl"] = os.path.join(outdir, "%(id)s.%(ext)s")
+        o.update(extra)
         return o
 
     async def fetch_image(img_url, filepath):
@@ -1081,9 +1081,11 @@ async def ig_download(interaction: discord.Interaction, url: str):
             async with aiohttp.ClientSession() as s:
                 async with s.get(img_url, headers=IG_HEADERS, timeout=aiohttp.ClientTimeout(total=30)) as r:
                     if r.status == 200:
-                        with open(filepath, "wb") as f:
-                            f.write(await r.read())
-                        return True
+                        data = await r.read()
+                        if len(data) > 1000:  # ignora risposte vuote/errore
+                            with open(filepath, "wb") as f:
+                                f.write(data)
+                            return True
         except Exception as e:
             print(f"⚠️ fetch_image: {e}")
         return False
@@ -1092,90 +1094,147 @@ async def ig_download(interaction: discord.Interaction, url: str):
         with tempfile.TemporaryDirectory() as tmpdir:
             loop = asyncio.get_event_loop()
 
-            # Step 1: scarica tutto con ignoreerrors=True
-            # Le foto senza stream vengono saltate da yt-dlp ma i thumbnail vengono salvati
-            def download_all():
-                opts = base_opts(tmpdir)
-                opts["writethumbnail"] = True        # salva le foto come immagini
+            # Step 1: estrai lista flat — ottieni gli URL dei singoli item senza processare formati
+            def get_flat():
+                opts = make_opts()
+                opts["extract_flat"] = True   # True = non processa nessun formato, mai
                 opts["noplaylist"] = False
-                opts["extract_flat"] = False
-                opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-                opts["merge_output_format"] = "mp4"
                 with yt_dlp.YoutubeDL(opts) as ydl:
-                    return ydl.extract_info(url, download=True)
+                    return ydl.extract_info(url, download=False)
 
-            info = await loop.run_in_executor(None, download_all)
-
-            if info is None:
-                await interaction.followup.send("❌ Nessun contenuto trovato. Controlla l'URL.", ephemeral=True)
+            flat = await loop.run_in_executor(None, get_flat)
+            if flat is None:
+                await interaction.followup.send("❌ Impossibile leggere il post. Controlla l'URL.", ephemeral=True)
                 return
 
-            title = ""
-            if info.get("_type") == "playlist":
-                entries = [e for e in (info.get("entries") or []) if e]
-                title = str(info.get("title") or (entries[0].get("title") if entries else "") or "Instagram")[:50]
+            # Raccogli entry items
+            if flat.get("_type") == "playlist":
+                entries = [e for e in (flat.get("entries") or []) if e]
+                title = str(flat.get("title") or (entries[0].get("title") if entries else "") or "Instagram")[:50]
             else:
-                title = str(info.get("title") or info.get("id") or "Instagram")[:50]
+                entries = [flat]
+                title = str(flat.get("title") or flat.get("id") or "Instagram")[:50]
 
-            # Step 2: raccogli thumbnail URLs per le foto (item senza file video)
-            # yt-dlp con ignoreerrors non scarica le foto ma ci dà i thumbnail nell'info
-            thumbnail_urls = []
-            if info.get("_type") == "playlist":
-                for entry in (info.get("entries") or []):
-                    if not entry:
-                        continue
-                    formats = entry.get("formats") or []
-                    has_video = any(f.get("vcodec") not in (None, "none", "") for f in formats)
-                    if not has_video:
-                        thumb = entry.get("thumbnail")
-                        if thumb:
-                            thumbnail_urls.append((entry.get("id", "foto"), thumb))
-            else:
-                formats = info.get("formats") or []
-                has_video = any(f.get("vcodec") not in (None, "none", "") for f in formats)
-                if not has_video:
-                    thumb = info.get("thumbnail")
-                    if thumb:
-                        thumbnail_urls.append((info.get("id", "foto"), thumb))
-
-            # Step 3: scarica i thumbnail delle foto mancanti
-            for i, (fid, thumb_url) in enumerate(thumbnail_urls):
-                filepath = os.path.join(tmpdir, f"foto_{i+1:02d}_{fid}.jpg")
-                if not os.path.exists(filepath):
-                    ok = await fetch_image(thumb_url, filepath)
-                    if ok:
-                        print(f"✅ Foto {i+1} scaricata dal thumbnail")
-                    else:
-                        print(f"⚠️ Foto {i+1} fallita")
-
-            # Step 4: invia tutti i file scaricati
-            all_files = sorted(
-                f for f in os.listdir(tmpdir)
-                if os.path.isfile(os.path.join(tmpdir, f))
-                and f.rsplit(".", 1)[-1].lower() in ("mp4", "mkv", "webm", "mov", "jpg", "jpeg", "png", "webp")
-            )
-
-            if not all_files:
-                await interaction.followup.send("❌ Nessun file scaricato.", ephemeral=True)
+            if not entries:
+                await interaction.followup.send("❌ Nessun contenuto trovato nel post.", ephemeral=True)
                 return
+
+            print(f"📋 '{title}' — {len(entries)} elemento/i")
 
             sent = 0
             too_large = []
 
-            for filename in all_files:
-                filepath = os.path.join(tmpdir, filename)
-                size = os.path.getsize(filepath)
-                if size == 0:
+            for idx, entry in enumerate(entries):
+                # Ricava l'URL della singola entry
+                entry_url = entry.get("url") or entry.get("webpage_url")
+                if not entry_url:
+                    # Se non c'è URL completo, costruiscilo dall'ID
+                    eid = entry.get("id")
+                    if eid:
+                        entry_url = f"https://www.instagram.com/p/{eid}/"
+                if not entry_url:
+                    print(f"⚠️ Entry {idx+1}: nessun URL disponibile")
                     continue
+
+                # Step 2: prova a scaricare come video
+                out_path = os.path.join(tmpdir, f"{idx+1:02d}_%(id)s.%(ext)s")
+                video_downloaded = False
+
+                def try_video(eu=entry_url, op=out_path):
+                    opts = make_opts()
+                    opts["outtmpl"] = op
+                    opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                    opts["merge_output_format"] = "mp4"
+                    opts["ignoreerrors"] = False
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        ydl.download([eu])
+
+                # Snapshot dei file prima del download
+                before = set(os.listdir(tmpdir))
+
+                try:
+                    await loop.run_in_executor(None, try_video)
+                except Exception:
+                    pass  # non è un video, prova come foto
+
+                # Trova solo i file NUOVI creati da questo download
+                after = set(os.listdir(tmpdir))
+                new_videos = [f for f in (after - before) if f.rsplit(".", 1)[-1].lower() in ("mp4", "mkv", "webm", "mov")]
+                for fname in sorted(new_videos):
+                    fpath = os.path.join(tmpdir, fname)
+                    if os.path.getsize(fpath) > 0:
+                        video_downloaded = True
+                        size = os.path.getsize(fpath)
+                        if size > MAX_BYTES:
+                            too_large.append(f"Video {idx+1} ({size//1024//1024}MB)")
+                        else:
+                            df = discord.File(fpath, filename=fname)
+                            await interaction.followup.send(content=None, file=df, ephemeral=True)
+                            print(f"✅ Video {idx+1}: {size//1024}KB")
+                            sent += 1
+
+
+                if video_downloaded:
+                    continue
+
+                # Step 3: è una foto — estrai il thumbnail URL
+                def get_thumb(eu=entry_url):
+                    opts = make_opts()
+                    opts["skip_download"] = True
+                    opts["extract_flat"] = False
+                    opts["ignoreerrors"] = True
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(eu, download=False)
+                        if info:
+                            # Prendi il thumbnail di qualità più alta
+                            thumbs = info.get("thumbnails") or []
+                            if thumbs:
+                                # Ordina per larghezza decrescente
+                                thumbs_sorted = sorted(
+                                    [t for t in thumbs if t.get("url")],
+                                    key=lambda t: t.get("width") or 0,
+                                    reverse=True
+                                )
+                                if thumbs_sorted:
+                                    return thumbs_sorted[0]["url"]
+                            return info.get("thumbnail")
+                    return None
+
+                thumb_url = await loop.run_in_executor(None, get_thumb)
+
+                if not thumb_url:
+                    # Ultimo tentativo: thumbnail dalla flat entry
+                    thumbs = entry.get("thumbnails") or []
+                    if thumbs:
+                        thumb_url = sorted(
+                            [t for t in thumbs if t.get("url")],
+                            key=lambda t: t.get("width") or 0,
+                            reverse=True
+                        )[0].get("url") if thumbs else None
+                    if not thumb_url:
+                        thumb_url = entry.get("thumbnail")
+
+                if not thumb_url:
+                    print(f"⚠️ Foto {idx+1}: nessun thumbnail trovato")
+                    continue
+
+                fpath = os.path.join(tmpdir, f"{idx+1:02d}_foto.jpg")
+                ok = await fetch_image(thumb_url, fpath)
+                if not ok:
+                    print(f"⚠️ Foto {idx+1}: download fallito da {thumb_url[:80]}")
+                    continue
+
+                size = os.path.getsize(fpath)
                 if size > MAX_BYTES:
-                    too_large.append(f"`{filename}` ({size//1024//1024}MB)")
+                    too_large.append(f"Foto {idx+1} ({size//1024//1024}MB)")
                     continue
-                df = discord.File(filepath, filename=filename)
+
+                df = discord.File(fpath, filename=f"foto_{idx+1}.jpg")
                 await interaction.followup.send(
-                    content=f"📥 **{title}**" if sent == 0 else None,
+                    content=None,
                     file=df, ephemeral=True
                 )
-                print(f"✅ Inviato: {filename} ({size//1024}KB)")
+                print(f"✅ Foto {idx+1}: {size//1024}KB")
                 sent += 1
 
             if too_large:
