@@ -1014,6 +1014,72 @@ async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
     print(f"✅ WTB Update inviato | img: {'✅' if immagine else '❌'}")
 
 
+
+# ── Instagram Downloader ──────────────────────────────────────────────────────
+
+@tree.command(name="ig", description="Scarica un video o foto da Instagram")
+@app_commands.describe(url="URL del post/reel/storia Instagram")
+async def ig_download(interaction: discord.Interaction, url: str):
+    if interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Solo il proprietario può usare questo comando.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    import tempfile, os, asyncio
+    import yt_dlp
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "%(id)s.%(ext)s")
+
+            ydl_opts = {
+                "outtmpl": output_path,
+                "quiet": True,
+                "no_warnings": True,
+                "format": "best[filesize<25M]/best",
+            }
+
+            loop = asyncio.get_event_loop()
+
+            def download():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    return info
+
+            info = await loop.run_in_executor(None, download)
+
+            # Trova il file scaricato
+            files = os.listdir(tmpdir)
+            if not files:
+                await interaction.followup.send("❌ Nessun file scaricato.", ephemeral=True)
+                return
+
+            filepath = os.path.join(tmpdir, files[0])
+            size = os.path.getsize(filepath)
+            title = info.get("title", "Instagram")[:50]
+
+            if size > 25 * 1024 * 1024:
+                # File troppo grande — manda solo il link diretto
+                direct_url = info.get("url", url)
+                await interaction.followup.send(
+                    f"⚠️ File troppo grande ({size//1024//1024}MB)\n🔗 {direct_url}",
+                    ephemeral=True
+                )
+            else:
+                file = discord.File(filepath, filename=files[0])
+                await interaction.followup.send(
+                    content=f"📥 **{title}**",
+                    file=file,
+                    ephemeral=True
+                )
+                print(f"✅ IG download: {title} ({size//1024}KB)")
+
+    except Exception as e:
+        print(f"⚠️ IG download errore: {e}")
+        await interaction.followup.send(f"❌ Errore: {str(e)[:200]}", ephemeral=True)
+
+
 # ── Webhook Manager ───────────────────────────────────────────────────────────
 
 def get_webhooks() -> list:
