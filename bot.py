@@ -1454,7 +1454,7 @@ def build_giveaway_embed(
     embed = discord.Embed(title=title, description=description, color=GIVEAWAY_COLOR)
 
     if not ended:
-        embed.add_field(name="Ends", value=discord_ts, inline=False)
+        embed.add_field(name="Ends", value=f"<t:{int(end_ts)}:R> - <t:{int(end_ts)}:f>", inline=False)
         embed.add_field(name="Entries", value=str(entries), inline=True)
         embed.add_field(name="Winners", value=str(winners_count), inline=True)
         embed.add_field(name="Hosted by", value=host, inline=False)
