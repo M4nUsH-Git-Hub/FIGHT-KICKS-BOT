@@ -1016,6 +1016,10 @@ async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
 
 
 # ── Instagram Downloader ──────────────────────────────────────────────────────
+# Per funzionare con Instagram devi fornire i cookie di una sessione autenticata.
+# Esporta i cookie dal browser (estensione "Get cookies.txt LOCALLY") mentre sei
+# loggato su Instagram, salvali come "instagram_cookies.txt" nella stessa cartella
+# del bot, oppure imposta la variabile d'ambiente IG_COOKIES_FILE con il path.
 
 @tree.command(name="ig", description="Scarica un video o foto da Instagram")
 @app_commands.describe(url="URL del post/reel/storia Instagram")
@@ -1029,6 +1033,12 @@ async def ig_download(interaction: discord.Interaction, url: str):
     import tempfile, os, asyncio
     import yt_dlp
 
+    # Percorso file cookie: variabile env oppure file locale
+    cookies_file = os.environ.get(
+        "IG_COOKIES_FILE",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "instagram_cookies.txt")
+    )
+
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "%(id)s.%(ext)s")
@@ -1037,9 +1047,32 @@ async def ig_download(interaction: discord.Interaction, url: str):
                 "outtmpl": output_path,
                 "quiet": False,
                 "no_warnings": False,
+                # Scarica il miglior formato entro 25 MB
                 "format": "best[filesize<25M]/best",
                 "verbose": True,
+                # Headers che simulano un browser reale
+                "http_headers": {
+                    "User-Agent": (
+                        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+                        "Mobile/15E148 Safari/604.1"
+                    ),
+                    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Accept": "*/*",
+                    "Referer": "https://www.instagram.com/",
+                    "Origin": "https://www.instagram.com",
+                },
+                # Estrae anche le entry della playlist (post con più foto/video)
+                "extract_flat": False,
+                "noplaylist": False,
             }
+
+            # Aggiunge i cookie se il file esiste
+            if os.path.isfile(cookies_file):
+                ydl_opts["cookiefile"] = cookies_file
+                print(f"🍪 Cookie file caricato: {cookies_file}")
+            else:
+                print(f"⚠️ Cookie file non trovato ({cookies_file}) — download senza autenticazione")
 
             loop = asyncio.get_event_loop()
 
@@ -1050,35 +1083,56 @@ async def ig_download(interaction: discord.Interaction, url: str):
 
             info = await loop.run_in_executor(None, download)
 
-            # Trova il file scaricato
+            # Se è una playlist (post con più elementi) prendi il primo entry
+            if info.get("_type") == "playlist":
+                entries = info.get("entries") or []
+                if not entries:
+                    await interaction.followup.send("❌ Nessun contenuto trovato nel post.", ephemeral=True)
+                    return
+                info = entries[0]
+
+            # Trova i file scaricati
             files = os.listdir(tmpdir)
             if not files:
                 await interaction.followup.send("❌ Nessun file scaricato.", ephemeral=True)
                 return
 
-            filepath = os.path.join(tmpdir, files[0])
-            size = os.path.getsize(filepath)
-            title = info.get("title", "Instagram")[:50]
+            title = (info.get("title") or info.get("id") or "Instagram")[:50]
+            sent = 0
 
-            if size > 25 * 1024 * 1024:
-                # File troppo grande — manda solo il link diretto
-                direct_url = info.get("url", url)
-                await interaction.followup.send(
-                    f"⚠️ File troppo grande ({size//1024//1024}MB)\n🔗 {direct_url}",
-                    ephemeral=True
-                )
-            else:
-                file = discord.File(filepath, filename=files[0])
-                await interaction.followup.send(
-                    content=f"📥 **{title}**",
-                    file=file,
-                    ephemeral=True
-                )
-                print(f"✅ IG download: {title} ({size//1024}KB)")
+            for filename in files:
+                filepath = os.path.join(tmpdir, filename)
+                size = os.path.getsize(filepath)
+
+                if size > 25 * 1024 * 1024:
+                    direct_url = info.get("url", url)
+                    await interaction.followup.send(
+                        f"⚠️ File troppo grande ({size // 1024 // 1024}MB)\n🔗 {direct_url}",
+                        ephemeral=True
+                    )
+                else:
+                    file = discord.File(filepath, filename=filename)
+                    await interaction.followup.send(
+                        content=f"📥 **{title}**" if sent == 0 else "",
+                        file=file,
+                        ephemeral=True
+                    )
+                    print(f"✅ IG download: {title} ({size // 1024}KB)")
+                sent += 1
 
     except Exception as e:
-        print(f"⚠️ IG download errore: {e}")
-        await interaction.followup.send(f"❌ Errore: {str(e)[:200]}", ephemeral=True)
+        err = str(e)
+        print(f"⚠️ IG download errore: {err}")
+        # Messaggio di errore più leggibile
+        if "login" in err.lower() or "checkpoint" in err.lower() or "cookie" in err.lower():
+            msg = "❌ Instagram richiede l'autenticazione. Aggiungi il file `instagram_cookies.txt` nella cartella del bot."
+        elif "Private" in err or "private" in err:
+            msg = "❌ Il post è privato e non accessibile."
+        elif "0 items" in err or "no video" in err.lower():
+            msg = "❌ Nessun contenuto scaricabile trovato. Prova con i cookie Instagram."
+        else:
+            msg = f"❌ Errore: {err[:200]}"
+        await interaction.followup.send(msg, ephemeral=True)
 
 
 # ── Webhook Manager ───────────────────────────────────────────────────────────
