@@ -1430,13 +1430,13 @@ def build_giveaway_embed(
     prize: str,
     end_ts: float,
     winners_count: int,
-    host: str,
+    host: str | None = None,
     entries: int = 0,
     ended: bool = False,
     winner_ids: list[int] | None = None,
 ) -> discord.Embed:
     """
-    host: stringa libera — può essere un mention (<@id>) o un testo/link (partner).
+    host: stringa libera opzionale — mention, testo o link. Se None, il campo non appare.
     """
     discord_ts = f"<t:{int(end_ts)}:f>"
 
@@ -1457,12 +1457,14 @@ def build_giveaway_embed(
         embed.add_field(name="Ends", value=f"<t:{int(end_ts)}:R> - <t:{int(end_ts)}:f>", inline=False)
         embed.add_field(name="Entries", value=str(entries), inline=True)
         embed.add_field(name="Winners", value=str(winners_count), inline=True)
-        embed.add_field(name="Hosted by", value=host, inline=False)
+        if host:
+            embed.add_field(name="Host", value=host, inline=False)
     else:
         embed.add_field(name="Ended", value=discord_ts, inline=False)
         embed.add_field(name="Entries", value=str(entries), inline=True)
         embed.add_field(name="Winners", value=str(winners_count), inline=True)
-        embed.add_field(name="Hosted by", value=host, inline=False)
+        if host:
+            embed.add_field(name="Host", value=host, inline=False)
 
     embed.set_footer(text=GIVEAWAY_FOOTER, icon_url=GIVEAWAY_ICON)
     return embed
@@ -1618,7 +1620,7 @@ async def giveaway_start(
 
     target_channel = channel or interaction.channel
     end_ts = datetime.now(timezone.utc).timestamp() + seconds
-    host = hosted_by if hosted_by else interaction.user.mention
+    host = hosted_by if hosted_by else None
 
     embed = build_giveaway_embed(
         prize=prize,
@@ -1644,47 +1646,6 @@ async def giveaway_start(
     }
     save_giveaways(giveaways)
 
-
-@giveaway_group.command(name="cancel", description="Cancel an active giveaway")
-@app_commands.describe(message_id="Message ID of the giveaway to cancel")
-async def giveaway_cancel(interaction: discord.Interaction, message_id: str):
-    if not (
-        interaction.user.id == interaction.guild.owner_id
-        or interaction.user.guild_permissions.administrator
-    ):
-        await interaction.response.send_message(
-            "❌ Only the owner or an administrator can cancel giveaways.", ephemeral=True
-        )
-        return
-
-    giveaways = get_giveaways()
-    giveaway = giveaways.get(message_id)
-
-    if giveaway is None:
-        await interaction.response.send_message(
-            "❌ No active giveaway found with that ID.", ephemeral=True
-        )
-        return
-
-    channel = bot.get_channel(giveaway["channel_id"])
-    if channel:
-        try:
-            msg = await channel.fetch_message(giveaway["message_id"])
-            cancelled_embed = discord.Embed(
-                title=f"~~{giveaway['prize']}~~",
-                description="❌ This giveaway has been cancelled.",
-                color=GIVEAWAY_COLOR,
-            )
-            cancelled_embed.set_footer(text=GIVEAWAY_FOOTER, icon_url=GIVEAWAY_ICON)
-            await msg.edit(embed=cancelled_embed)
-        except discord.NotFound:
-            pass
-
-    giveaways.pop(message_id, None)
-    save_giveaways(giveaways)
-    await interaction.response.send_message(
-        f"✅ Giveaway **{giveaway['prize']}** cancelled.", ephemeral=True
-    )
 
 
 tree.add_command(giveaway_group)
