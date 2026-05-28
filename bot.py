@@ -1035,9 +1035,10 @@ async def ig_download(interaction: discord.Interaction, url: str):
 
             ydl_opts = {
                 "outtmpl": output_path,
-                "quiet": True,
-                "no_warnings": True,
+                "quiet": False,
+                "no_warnings": False,
                 "format": "best[filesize<25M]/best",
+                "verbose": True,
             }
 
             loop = asyncio.get_event_loop()
