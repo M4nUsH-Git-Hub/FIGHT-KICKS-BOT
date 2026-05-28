@@ -1033,11 +1033,21 @@ async def ig_download(interaction: discord.Interaction, url: str):
     import tempfile, os, asyncio
     import yt_dlp
 
-    # Percorso file cookie: variabile env oppure file locale
-    cookies_file = os.environ.get(
-        "IG_COOKIES_FILE",
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "instagram_cookies.txt")
-    )
+    # Gestione cookie: da variabile env IG_COOKIES (contenuto) oppure IG_COOKIES_FILE (path)
+    cookies_file = os.environ.get("IG_COOKIES_FILE")
+
+    if not cookies_file:
+        ig_cookies_content = os.environ.get("IG_COOKIES")
+        if ig_cookies_content:
+            tmp_cookies = "/tmp/instagram_cookies.txt"
+            with open(tmp_cookies, "w") as f:
+                f.write(ig_cookies_content)
+            cookies_file = tmp_cookies
+            print("🍪 Cookie caricati da variabile d'ambiente IG_COOKIES")
+        else:
+            local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instagram_cookies.txt")
+            if os.path.isfile(local_path):
+                cookies_file = local_path
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1067,12 +1077,12 @@ async def ig_download(interaction: discord.Interaction, url: str):
                 "noplaylist": False,
             }
 
-            # Aggiunge i cookie se il file esiste
-            if os.path.isfile(cookies_file):
+            # Aggiunge i cookie se disponibili
+            if cookies_file and os.path.isfile(cookies_file):
                 ydl_opts["cookiefile"] = cookies_file
                 print(f"🍪 Cookie file caricato: {cookies_file}")
             else:
-                print(f"⚠️ Cookie file non trovato ({cookies_file}) — download senza autenticazione")
+                print("⚠️ Nessun cookie disponibile — download senza autenticazione")
 
             loop = asyncio.get_event_loop()
 
