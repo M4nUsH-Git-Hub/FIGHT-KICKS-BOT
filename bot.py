@@ -1399,7 +1399,7 @@ tree.add_command(webhook_group)
 
 GIVEAWAY_EMOJI  = "🎉"
 GIVEAWAY_COLOR  = discord.Color(0x575553)
-GIVEAWAY_FOOTER = "Giveaway"
+GIVEAWAY_FOOTER = "Giveaway Automatic Bot"
 GIVEAWAY_ICON   = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
 
 
@@ -1454,13 +1454,13 @@ def build_giveaway_embed(
     embed = discord.Embed(title=title, description=description, color=GIVEAWAY_COLOR)
 
     if not ended:
-        embed.add_field(name="Ends", value=f"<t:{int(end_ts)}:R> - <t:{int(end_ts)}:f>", inline=False)
+        embed.add_field(name="Expires", value=f"<t:{int(end_ts)}:R> - <t:{int(end_ts)}:f>", inline=False)
         embed.add_field(name="Entries", value=str(entries), inline=True)
         embed.add_field(name="Winners", value=str(winners_count), inline=True)
         if host:
             embed.add_field(name="Host", value=host, inline=False)
     else:
-        embed.add_field(name="Ended", value=discord_ts, inline=False)
+        embed.add_field(name="Expired", value=discord_ts, inline=False)
         embed.add_field(name="Entries", value=str(entries), inline=True)
         embed.add_field(name="Winners", value=str(winners_count), inline=True)
         if host:
