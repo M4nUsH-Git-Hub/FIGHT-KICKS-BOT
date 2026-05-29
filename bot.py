@@ -1435,9 +1435,11 @@ def build_giveaway_embed(
     entries: int = 0,
     ended: bool = False,
     winner_ids: list[int] | None = None,
+    rules: str | None = None,
 ) -> discord.Embed:
     """
     host: stringa libera opzionale — mention, testo o link. Se None, il campo non appare.
+    rules: testo opzionale mostrato nel campo Rules dell'embed attivo.
     """
     discord_ts = f"<t:{int(end_ts)}:f>"
 
@@ -1462,6 +1464,8 @@ def build_giveaway_embed(
         embed.add_field(name=winner_label, value=str(winners_count), inline=True)
         if host:
             embed.add_field(name="Host", value=host, inline=False)
+        if rules:
+            embed.add_field(name="Rules", value=rules, inline=False)
     else:
         embed.add_field(name="Expired", value=discord_ts, inline=False)
         embed.add_field(name="Entries", value=str(entries), inline=True)
@@ -1574,8 +1578,9 @@ async def giveaway_check():
             prize=g["prize"],
             end_ts=g["end_ts"],
             winners_count=g["winners_count"],
-            host=g.get("host", "—"),
+            host=g.get("host"),
             entries=entries,
+            rules=g.get("rules"),
         )
         await message.edit(embed=updated_embed)
 
@@ -1593,16 +1598,16 @@ giveaway_group = GiveawayGroup()
     prize="What's being given away (e.g. '2GB Flaming Proxies')",
     duration="Giveaway duration (e.g. 1d, 12h, 30m)",
     winners="Number of winners (default: 1)",
-    channel="Channel to post in (default: current channel)",
     hosted_by="Optional: override host with a partner tag or link",
+    rules="Optional: giveaway rules shown in the embed",
 )
 async def giveaway_start(
     interaction: discord.Interaction,
     prize: str,
     duration: str,
     winners: app_commands.Range[int, 1, 20] = 1,
-    channel: discord.TextChannel = None,
     hosted_by: str = None,
+    rules: str = None,
 ):
     if not (
         interaction.user.id == interaction.guild.owner_id
@@ -1631,6 +1636,7 @@ async def giveaway_start(
         winners_count=winners,
         host=host,
         entries=0,
+        rules=rules,
     )
 
     await interaction.response.send_message("✅ Giveaway started!", ephemeral=True)
@@ -1646,12 +1652,48 @@ async def giveaway_start(
         "end_ts": end_ts,
         "winners_count": winners,
         "host": host,
+        "rules": rules,
     }
     save_giveaways(giveaways)
 
 
 
 tree.add_command(giveaway_group)
+@tree.command(name="redeem", description="Send the reward redemption message")
+@app_commands.describe(
+    server_name="Optional: name of the server where winners open a ticket",
+    server_link="Optional: invite link of that server",
+    contact="Optional: tag of the person to contact (e.g. @M4nUsH)",
+)
+async def redeem(
+    interaction: discord.Interaction,
+    server_name: str = None,
+    server_link: str = None,
+    contact: str = None,
+):
+    if not (
+        interaction.user.id == interaction.guild.owner_id
+        or interaction.user.guild_permissions.administrator
+    ):
+        await interaction.response.send_message(
+            "❌ Only the owner or an administrator can use this command.", ephemeral=True
+        )
+        return
+
+    line1 = "Congratulations to the winners!"
+    line3 = "Thank you for participating ♥️"
+
+    if server_name and server_link:
+        line2 = f"To collect your prize open a ticket in [**{server_name}**]({server_link})"
+    elif contact:
+        line2 = f"To collect your prize contact {contact}"
+    else:
+        line2 = "To collect your prize open a [support ticket](https://discord.com/channels/1383358337432813618/1416824721932161025)"
+
+    message = f"- {line1}\n- {line2}\n- {line3}"
+    await interaction.response.send_message(message)
+
+
 
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
