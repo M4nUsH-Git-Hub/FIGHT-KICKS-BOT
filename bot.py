@@ -1696,8 +1696,12 @@ async def redem(ctx, *, args: str = ""):
     elif username_match:
         line2 = f"To collect your prize contact {args}"
     elif args:
+        # Controlla se c'è la keyword "hide" per sopprimere l'anteprima
+        hide = args.endswith(" hide")
+        if hide:
+            args = args[:-5].strip()
+
         # Formato: "Server Name" link  oppure  Server Name link (ultima parola = link)
-        import re as _re
         quoted = _re.match(r'"(.+?)"\s+(https?://\S+)', args)
         if quoted:
             server_name, server_link = quoted.group(1), quoted.group(2)
@@ -1705,6 +1709,9 @@ async def redem(ctx, *, args: str = ""):
             parts = args.rsplit(None, 1)
             server_name = parts[0].strip('"') if len(parts) > 1 else args
             server_link = parts[1] if len(parts) > 1 else ""
+
+        if hide:
+            server_link = f"<{server_link}>"
         line2 = f"To collect your prize open a ticket in [**{server_name}**]({server_link})"
     else:
         line2 = "To collect your prize open a [support ticket](https://discord.com/channels/1383358337432813618/1416824721932161025)"
