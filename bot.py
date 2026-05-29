@@ -969,6 +969,7 @@ async def wtb(
         embed.set_image(url=img_url)
 
     embed.set_footer(text="WTB Monitor", icon_url=FOOTER_ICON_WTB)
+    embed.timestamp = datetime.now(timezone.utc)
 
     await channel.send(embed=embed)
     await send_to_webhooks(embed)
@@ -1399,7 +1400,7 @@ tree.add_command(webhook_group)
 
 GIVEAWAY_EMOJI  = "🎉"
 GIVEAWAY_COLOR  = discord.Color(0x575553)
-GIVEAWAY_FOOTER = "Giveaway Automatic Bot"
+GIVEAWAY_FOOTER = "Giveaway"
 GIVEAWAY_ICON   = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
 
 
@@ -1454,7 +1455,7 @@ def build_giveaway_embed(
     embed = discord.Embed(title=title, description=description, color=GIVEAWAY_COLOR)
 
     if not ended:
-        embed.add_field(name="Expires", value=f"<t:{int(end_ts)}:R> - <t:{int(end_ts)}:f>", inline=False)
+        embed.add_field(name="Expires", value=f"<t:{int(end_ts)}:R> | <t:{int(end_ts)}:f>", inline=False)
         embed.add_field(name="Entries", value=str(entries), inline=True)
         embed.add_field(name="Winners", value=str(winners_count), inline=True)
         if host:
@@ -1467,6 +1468,7 @@ def build_giveaway_embed(
             embed.add_field(name="Host", value=host, inline=False)
 
     embed.set_footer(text=GIVEAWAY_FOOTER, icon_url=GIVEAWAY_ICON)
+    embed.timestamp = datetime.now(timezone.utc)
     return embed
 
 
