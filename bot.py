@@ -1442,10 +1442,11 @@ def build_giveaway_embed(
     discord_ts = f"<t:{int(end_ts)}:f>"
 
     if ended:
-        title = f"🎊 {prize}"
+        title = prize
         if winner_ids:
-            winners_str = ", ".join(f"<@{wid}>" for wid in winner_ids)
-            description = f"**Winners:** {winners_str}"
+            label = "Winner :" if len(winner_ids) == 1 else "Winners :"
+            winners_str = " - ".join(f"<@{wid}>" for wid in winner_ids)
+            description = f"**{label}** {winners_str}"
         else:
             description = "No valid participants."
     else:
@@ -1517,14 +1518,19 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
     await message.edit(embed=ended_embed)
 
     if winner_ids:
-        winners_mention = " ".join(f"<@{wid}>" for wid in winner_ids)
-        await channel.send(
-            f"🎊 Congratulations {winners_mention}! You won **{giveaway['prize']}**!\n"
-            f"*(Hosted by {giveaway['host']})*"
-        )
+        if len(winner_ids) == 1:
+            mention = f"<@{winner_ids[0]}>"
+            await channel.send(
+                f"Congratulations {mention}! You won **{giveaway['prize']}**!"
+            )
+        else:
+            mentions = ", ".join(f"<@{wid}>" for wid in winner_ids)
+            await channel.send(
+                f"Congratulations {mentions}! You won **{giveaway['prize']}**!"
+            )
     else:
         await channel.send(
-            f"❌ The giveaway for **{giveaway['prize']}** ended with no valid participants."
+            f"The giveaway for **{giveaway['prize']}** ended with no valid participants."
         )
 
     giveaways = get_giveaways()
