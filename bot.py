@@ -1441,12 +1441,13 @@ def build_giveaway_embed(
     """
     discord_ts = f"<t:{int(end_ts)}:f>"
 
+    winner_label = "Winner" if winners_count == 1 else "Winners"
+
     if ended:
         title = prize
         if winner_ids:
-            label = "Winner :" if len(winner_ids) == 1 else "Winners :"
             winners_str = " - ".join(f"<@{wid}>" for wid in winner_ids)
-            description = f"**{label}** {winners_str}"
+            description = f"**{winner_label} :** {winners_str}"
         else:
             description = "No valid participants."
     else:
@@ -1458,13 +1459,13 @@ def build_giveaway_embed(
     if not ended:
         embed.add_field(name="Expires", value=f"<t:{int(end_ts)}:R> | <t:{int(end_ts)}:f>", inline=False)
         embed.add_field(name="Entries", value=str(entries), inline=True)
-        embed.add_field(name="Winners", value=str(winners_count), inline=True)
+        embed.add_field(name=winner_label, value=str(winners_count), inline=True)
         if host:
             embed.add_field(name="Host", value=host, inline=False)
     else:
         embed.add_field(name="Expired", value=discord_ts, inline=False)
         embed.add_field(name="Entries", value=str(entries), inline=True)
-        embed.add_field(name="Winners", value=str(winners_count), inline=True)
+        embed.add_field(name=winner_label, value=str(winners_count), inline=True)
         if host:
             embed.add_field(name="Host", value=host, inline=False)
 
@@ -1518,16 +1519,10 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
     await message.edit(embed=ended_embed)
 
     if winner_ids:
-        if len(winner_ids) == 1:
-            mention = f"<@{winner_ids[0]}>"
-            await channel.send(
-                f"Congratulations {mention}! You won **{giveaway['prize']}**!"
-            )
-        else:
-            mentions = ", ".join(f"<@{wid}>" for wid in winner_ids)
-            await channel.send(
-                f"Congratulations {mentions}! You won **{giveaway['prize']}**!"
-            )
+        mentions = ", ".join(f"<@{wid}>" for wid in winner_ids)
+        await channel.send(
+            f"Congratulations {mentions}\nYou won **{giveaway['prize']}**!"
+        )
     else:
         await channel.send(
             f"The giveaway for **{giveaway['prize']}** ended with no valid participants."
