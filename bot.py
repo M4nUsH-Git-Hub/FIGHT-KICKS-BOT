@@ -1626,7 +1626,7 @@ async def giveaway_start(
         )
         return
 
-    target_channel = channel or interaction.channel
+    target_channel = interaction.channel
     end_ts = datetime.now(timezone.utc).timestamp() + seconds
     host = hosted_by if hosted_by else None
 
@@ -1659,42 +1659,60 @@ async def giveaway_start(
 
 
 tree.add_command(giveaway_group)
-@tree.command(name="redeem", description="Send the reward redemption message")
-@app_commands.describe(
-    server_name="Optional: name of the server where winners open a ticket",
-    server_link="Optional: invite link of that server",
-    contact="Optional: tag of the person to contact (e.g. @M4nUsH)",
-)
-async def redeem(
-    interaction: discord.Interaction,
-    server_name: str = None,
-    server_link: str = None,
-    contact: str = None,
-):
+
+
+
+
+@bot.command(name="redeem")
+async def redeem(ctx, *, args: str = ""):
+    """
+    !redeem                          → default (support ticket)
+    !redeem "Server Name" link       → ticket in external server
+    !redeem contact @tag/<@ID>/ID    → contact a person
+    """
     if not (
-        interaction.user.id == interaction.guild.owner_id
-        or interaction.user.guild_permissions.administrator
+        ctx.author.id == ctx.guild.owner_id
+        or ctx.author.guild_permissions.administrator
     ):
-        await interaction.response.send_message(
-            "❌ Only the owner or an administrator can use this command.", ephemeral=True
-        )
+        await ctx.message.delete()
         return
+
+    await ctx.message.delete()
 
     line1 = "Congratulations to the winners!"
     line3 = "Thank you for participating ♥️"
 
-    if server_name and server_link:
+    args = args.strip()
+
+    if args.startswith("contact"):
+        raw = args[len("contact"):].strip()
+        # Accetta <@ID>, @username, o ID numerico puro
+        import re as _re
+        mention_match = _re.search(r"<@!?(\d+)>", raw)
+        id_match = _re.fullmatch(r"\d+", raw)
+        if mention_match:
+            line2 = f"To collect your prize contact <@{mention_match.group(1)}>"
+        elif id_match:
+            line2 = f"To collect your prize contact <@{raw}>"
+        else:
+            # username o testo libero
+            line2 = f"To collect your prize contact {raw}"
+    elif args:
+        # Formato: "Server Name" link  oppure  Server Name link (ultima parola = link)
+        import re as _re
+        quoted = _re.match(r'"(.+?)"\s+(https?://\S+)', args)
+        if quoted:
+            server_name, server_link = quoted.group(1), quoted.group(2)
+        else:
+            parts = args.rsplit(None, 1)
+            server_name = parts[0].strip('"') if len(parts) > 1 else args
+            server_link = parts[1] if len(parts) > 1 else ""
         line2 = f"To collect your prize open a ticket in [**{server_name}**]({server_link})"
-    elif contact:
-        line2 = f"To collect your prize contact {contact}"
     else:
         line2 = "To collect your prize open a [support ticket](https://discord.com/channels/1383358337432813618/1416824721932161025)"
 
     message = f"- {line1}\n- {line2}\n- {line3}"
-    await interaction.response.send_message(message)
-
-
-
+    await ctx.send(message)
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
