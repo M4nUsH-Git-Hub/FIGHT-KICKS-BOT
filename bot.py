@@ -1663,12 +1663,12 @@ tree.add_command(giveaway_group)
 
 
 
-@bot.command(name="redeem")
-async def redeem(ctx, *, args: str = ""):
+@bot.command(name="redem")
+async def redem(ctx, *, args: str = ""):
     """
-    !redeem                          → default (support ticket)
-    !redeem "Server Name" link       → ticket in external server
-    !redeem contact @tag/<@ID>/ID    → contact a person
+    !redem                           → default (support ticket)
+    !redem "Server Name" link        → ticket in external server
+    !redem @tag/<@ID>/ID             → contact a person
     """
     if not (
         ctx.author.id == ctx.guild.owner_id
@@ -1683,20 +1683,18 @@ async def redeem(ctx, *, args: str = ""):
     line3 = "Thank you for participating ♥️"
 
     args = args.strip()
+    import re as _re
 
-    if args.startswith("contact"):
-        raw = args[len("contact"):].strip()
-        # Accetta <@ID>, @username, o ID numerico puro
-        import re as _re
-        mention_match = _re.search(r"<@!?(\d+)>", raw)
-        id_match = _re.fullmatch(r"\d+", raw)
-        if mention_match:
-            line2 = f"To collect your prize contact <@{mention_match.group(1)}>"
-        elif id_match:
-            line2 = f"To collect your prize contact <@{raw}>"
-        else:
-            # username o testo libero
-            line2 = f"To collect your prize contact {raw}"
+    mention_match = _re.match(r"<@!?(\d+)>", args)
+    id_only_match = _re.fullmatch(r"\d+", args)
+    username_match = _re.match(r"@\S+", args)
+
+    if mention_match:
+        line2 = f"To collect your prize contact <@{mention_match.group(1)}>"
+    elif id_only_match:
+        line2 = f"To collect your prize contact <@{args}>"
+    elif username_match:
+        line2 = f"To collect your prize contact {args}"
     elif args:
         # Formato: "Server Name" link  oppure  Server Name link (ultima parola = link)
         import re as _re
