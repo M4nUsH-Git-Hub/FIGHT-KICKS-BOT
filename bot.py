@@ -1519,7 +1519,7 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
     await message.edit(embed=ended_embed)
 
     if winner_ids:
-        mentions = ", ".join(f"<@{wid}>" for wid in winner_ids)
+        mentions = " - ".join(f"<@{wid}>" for wid in winner_ids)
         await channel.send(
             f"Congratulations {mentions}\nYou won **{giveaway['prize']}**!"
         )
