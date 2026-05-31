@@ -1400,6 +1400,62 @@ async def redem(ctx, *, args: str = ""):
     message = f"- {line1}\n- {line2}\n- {line3}"
     await ctx.send(message)
 
+
+# ── Announcement Command ──────────────────────────────────────────────────────
+
+ANNOUNCEMENT_CHANNEL_ID = 1383358337432813621
+_announcement_pending = set()  # set di user ID in attesa
+
+@bot.command(name="announcement")
+async def announcement(ctx):
+    if not (
+        ctx.author.id == ctx.guild.owner_id
+        or ctx.author.guild_permissions.administrator
+    ):
+        await ctx.message.delete()
+        return
+
+    await ctx.message.delete()
+
+    # Notifica solo a chi ha scritto il comando
+    prompt = await ctx.send(f"<@{ctx.author.id}> ✅ Scrivi il messaggio da mandare nel canale announcement. Puoi allegare foto o file.")
+    _announcement_pending.add(ctx.author.id)
+
+    def check(m):
+        return m.author.id == ctx.author.id and m.channel.id == ctx.channel.id and ctx.author.id in _announcement_pending
+
+    try:
+        msg = await bot.wait_for("message", check=check, timeout=300)
+    except:
+        _announcement_pending.discard(ctx.author.id)
+        await prompt.delete()
+        return
+
+    _announcement_pending.discard(ctx.author.id)
+    await prompt.delete()
+    await msg.delete()
+
+    ann_channel = ctx.guild.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+    if not ann_channel:
+        return
+
+    # Raccoglie gli allegati
+    files = []
+    for att in msg.attachments:
+        try:
+            f = await att.to_file()
+            files.append(f)
+        except Exception as e:
+            print(f"⚠️ Allegato non scaricabile: {e}")
+
+    content = msg.content if msg.content else None
+
+    try:
+        await ann_channel.send(content=content, files=files if files else discord.utils.MISSING)
+    except Exception as e:
+        print(f"⚠️ Errore invio announcement: {e}")
+
+
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
 @bot.event
