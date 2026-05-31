@@ -684,7 +684,7 @@ async def wtb(
         return
 
     embed = discord.Embed(
-        title=f"{nome} - {taglia}",
+        title=f"{nome} {taglia}",
         url=link,
         color=discord.Color(0x575553),
     )
@@ -700,7 +700,7 @@ async def wtb(
     embed.set_footer(text="WTB Monitor", icon_url=FOOTER_ICON_WTB)
     embed.timestamp = datetime.now(timezone.utc)
 
-    await channel.send(embed=embed)
+    await channel.send(content="<@&1427396900801347594>", embed=embed)
     await send_to_webhooks(embed)
     await interaction.followup.send(f"✅ WTB inviato — {nome} {taglia} | Webhook: {len(get_webhooks())}", ephemeral=True)
     print(f"✅ WTB inviato — {nome} | img:{'✅' if img_url else '❌'} | webhook:{len(get_webhooks())}")
@@ -743,7 +743,7 @@ async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
     if immagine:
         embed.set_image(url=immagine)
 
-    await channel.send(content="||<@&1427396900801347594>||", embed=embed)
+    await channel.send(content="<@&1427396900801347594>", embed=embed)
     await interaction.followup.send("✅ WTB Update inviato!", ephemeral=True)
     print(f"✅ WTB Update inviato | img: {'✅' if immagine else '❌'}")
 
