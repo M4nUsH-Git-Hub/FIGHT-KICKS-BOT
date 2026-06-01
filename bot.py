@@ -1406,8 +1406,8 @@ async def redem(ctx, *, args: str = ""):
 ANNOUNCEMENT_CHANNEL_ID = 1383358337432813621
 _announcement_pending = set()  # set di user ID in attesa
 
-@bot.command(name="announcement")
-async def announcement(ctx):
+@bot.command(name="news")
+async def news(ctx):
     if not (
         ctx.author.id == ctx.guild.owner_id
         or ctx.author.guild_permissions.administrator
@@ -1432,14 +1432,14 @@ async def announcement(ctx):
         return
 
     _announcement_pending.discard(ctx.author.id)
-    await prompt.delete()
-    await msg.delete()
 
     ann_channel = ctx.guild.get_channel(ANNOUNCEMENT_CHANNEL_ID)
     if not ann_channel:
+        await prompt.delete()
+        await msg.delete()
         return
 
-    # Raccoglie gli allegati
+    # Scarica gli allegati PRIMA di cancellare il messaggio (dopo la delete il CDN restituisce 404)
     files = []
     for att in msg.attachments:
         try:
@@ -1447,6 +1447,9 @@ async def announcement(ctx):
             files.append(f)
         except Exception as e:
             print(f"⚠️ Allegato non scaricabile: {e}")
+
+    await prompt.delete()
+    await msg.delete()
 
     content = msg.content if msg.content else None
 
