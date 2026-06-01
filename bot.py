@@ -285,6 +285,13 @@ async def on_ready():
     # Avvia task giveaway
     if not giveaway_check.is_running():
         giveaway_check.start()
+    # Registra views persistenti ticket (sopravvivono ai restart)
+    bot.add_view(CreateTicketView("support"))
+    bot.add_view(CreateDealTicketView())
+    bot.add_view(TicketControlView("support"))
+    bot.add_view(TicketControlView("deal"))
+    # Avvia web server transcript
+    await start_web_server()
 
 
 # ── Gruppo comandi slash /pingbackup ──────────────────────────────────────────
@@ -1459,6 +1466,344 @@ async def news(ctx):
         print(f"⚠️ Errore invio announcement: {e}")
 
 
+
+# ── Ticket System ─────────────────────────────────────────────────────────────
+
+import asyncio
+from aiohttp import web as aiohttp_web
+import aiohttp
+
+TICKET_OWNER_ID       = 734909407825100813
+TICKET_LOG_CHANNEL_ID = 1416439928497111171
+LOGO_URL              = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
+CLOSE_DELAY           = 5  # secondi prima dell'eliminazione
+
+PANELS = {
+    "support": {
+        "label":        "OPEN TICKET SUPPORT",
+        "button_label": "📩 Create Ticket",
+        "footer":       "Ticket Support",
+        "category_id":  1416824941042471072,
+        "color":        0x2ecc71,
+        "prefix":       "support",
+    },
+    "deal": {
+        "label":        "OPEN DEAL TICKET",
+        "button_label": "📩 Create Ticket",
+        "footer":       "Deal Ticket",
+        "category_id":  1416823933445083316,
+        "color":        0xe67e22,
+        "prefix":       "deal",
+    },
+}
+
+# In-memory transcript store: channel_id -> list of HTML strings
+_transcripts: dict[int, list[str]] = {}
+# In-memory web server storage: token -> html content
+_transcript_store: dict[str, str] = {}
+
+# ── Web server per transcript ──────────────────────────────────────────────────
+
+async def transcript_handler(request):
+    token = request.match_info.get("token", "")
+    html = _transcript_store.get(token)
+    if not html:
+        return aiohttp_web.Response(status=404, text="Transcript not found.")
+    return aiohttp_web.Response(content_type="text/html", text=html)
+
+async def start_web_server():
+    app = aiohttp_web.Application()
+    app.router.add_get("/transcript/{token}", transcript_handler)
+    app.router.add_get("/health", lambda r: aiohttp_web.Response(text="OK"))
+    runner = aiohttp_web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = aiohttp_web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"🌐 Web server avviato su porta {port}")
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _ticket_number(channel_name: str) -> str:
+    parts = channel_name.rsplit("-", 1)
+    return parts[-1] if len(parts) == 2 else "0000"
+
+def _is_owner(user_id: int) -> bool:
+    return user_id == TICKET_OWNER_ID
+
+def _format_message_html(msg: discord.Message) -> str:
+    avatar = msg.author.display_avatar.url if msg.author.display_avatar else ""
+    name   = discord.utils.escape_mentions(str(msg.author))
+    ts     = msg.created_at.strftime("%d/%m/%Y %H:%M")
+    text   = discord.utils.escape_mentions(msg.content or "")
+    text   = text.replace("\n", "<br>")
+
+    attachments_html = ""
+    for att in msg.attachments:
+        if att.content_type and att.content_type.startswith("image"):
+            attachments_html += f'<br><img src="{att.url}" style="max-width:400px;border-radius:4px;margin-top:6px">'
+        else:
+            attachments_html += f'<br><a href="{att.url}" style="color:#7289da">{att.filename}</a>'
+
+    return f"""
+    <div class="msg">
+      <img class="avatar" src="{avatar}" alt="">
+      <div class="content">
+        <span class="author">{name}</span>
+        <span class="ts">{ts}</span>
+        <div class="text">{text}{attachments_html}</div>
+      </div>
+    </div>"""
+
+def _build_transcript_html(channel: discord.TextChannel, messages: list[discord.Message], panel_label: str) -> str:
+    msgs_html = "\n".join(_format_message_html(m) for m in messages)
+    user_counts: dict[str, int] = {}
+    for m in messages:
+        key = str(m.author)
+        user_counts[key] = user_counts.get(key, 0) + 1
+    users_rows = "\n".join(
+        f'<tr><td>{u}</td><td>{c}</td></tr>'
+        for u, c in sorted(user_counts.items(), key=lambda x: -x[1])
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Transcript — {channel.name}</title>
+<style>
+  body{{background:#36393f;color:#dcddde;font-family:'Whitney','Helvetica Neue',Helvetica,Arial,sans-serif;margin:0;padding:0}}
+  .header{{background:#2f3136;padding:20px 30px;border-bottom:1px solid #202225}}
+  .header h1{{margin:0;font-size:1.4rem;color:#fff}}
+  .header p{{margin:4px 0 0;font-size:.85rem;color:#b9bbbe}}
+  .stats{{background:#2f3136;margin:16px 24px;border-radius:8px;padding:16px;display:flex;gap:32px;flex-wrap:wrap}}
+  .stat{{display:flex;flex-direction:column}}
+  .stat-label{{font-size:.75rem;color:#b9bbbe;text-transform:uppercase;letter-spacing:.05em}}
+  .stat-value{{font-size:1rem;color:#fff;margin-top:2px}}
+  .users-table{{background:#2f3136;margin:0 24px 16px;border-radius:8px;padding:16px}}
+  .users-table h3{{margin:0 0 10px;font-size:.9rem;color:#b9bbbe;text-transform:uppercase;letter-spacing:.05em}}
+  table{{border-collapse:collapse;width:100%}}
+  td,th{{padding:6px 10px;text-align:left;font-size:.85rem;border-bottom:1px solid #40444b}}
+  th{{color:#b9bbbe}}
+  .messages{{padding:0 24px 40px}}
+  .msg{{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #40444b33}}
+  .avatar{{width:40px;height:40px;border-radius:50%;flex-shrink:0}}
+  .content{{flex:1;min-width:0}}
+  .author{{font-weight:600;color:#fff;font-size:.9rem}}
+  .ts{{font-size:.75rem;color:#72767d;margin-left:8px}}
+  .text{{font-size:.9rem;color:#dcddde;margin-top:4px;word-break:break-word;white-space:pre-wrap}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📄 {channel.name}</h1>
+  <p>{panel_label} — FIGHT KICKS WTB</p>
+</div>
+<div class="stats">
+  <div class="stat"><span class="stat-label">Channel</span><span class="stat-value">{channel.name}</span></div>
+  <div class="stat"><span class="stat-label">Messages</span><span class="stat-value">{len(messages)}</span></div>
+</div>
+<div class="users-table">
+  <h3>Users in transcript</h3>
+  <table><tr><th>User</th><th>Messages</th></tr>{users_rows}</table>
+</div>
+<div class="messages">{msgs_html}</div>
+</body>
+</html>"""
+
+async def _generate_and_post_transcript(channel: discord.TextChannel, guild: discord.Guild, panel_label: str):
+    """Genera il transcript, lo hosta e invia l'embed nel canale log."""
+    messages = []
+    async for msg in channel.history(limit=None, oldest_first=True):
+        messages.append(msg)
+
+    html = _build_transcript_html(channel, messages, panel_label)
+
+    import secrets
+    token = secrets.token_urlsafe(16)
+    _transcript_store[token] = html
+
+    base_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    if base_url:
+        link = f"https://{base_url}/transcript/{token}"
+    else:
+        link = f"http://localhost:{os.environ.get('PORT', 8080)}/transcript/{token}"
+
+    log_ch = guild.get_channel(TICKET_LOG_CHANNEL_ID)
+    if not log_ch:
+        return link
+
+    # Conta utenti
+    user_counts: dict[str, int] = {}
+    for m in messages:
+        key = f"{m.author.mention} — {m.author}"
+        user_counts[key] = user_counts.get(key, 0) + 1
+    users_str = "\n".join(
+        f"{c} — {u}" for u, c in sorted(user_counts.items(), key=lambda x: -x[1])
+    )[:1000]
+
+    embed = discord.Embed(color=0x2f3136)
+    embed.add_field(name="Ticket Name",  value=channel.name,   inline=True)
+    embed.add_field(name="Panel Name",   value=panel_label,    inline=True)
+    embed.add_field(name="Messages",     value=str(len(messages)), inline=True)
+    embed.add_field(name="Users in transcript", value=users_str or "—", inline=False)
+    embed.set_footer(text="Ticket Support", icon_url=LOGO_URL)
+
+    view = discord.ui.View()
+    view.add_item(discord.ui.Button(label="Direct Link", url=link, style=discord.ButtonStyle.link, emoji="🔗"))
+
+    await log_ch.send(embed=embed, view=view)
+    return link
+
+# ── Views / Buttons ────────────────────────────────────────────────────────────
+
+class TicketControlView(discord.ui.View):
+    """Bottoni Close Ticket e Transcript — persistenti nel canale ticket."""
+    def __init__(self, panel_key: str):
+        super().__init__(timeout=None)
+        self.panel_key = panel_key
+
+    @discord.ui.button(label="🔒 Close Ticket", style=discord.ButtonStyle.danger,  custom_id="ticket_close")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _is_owner(interaction.user.id):
+            await interaction.response.send_message("❌ Only the server owner can close tickets.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"🔒 Ticket will be closed in **{CLOSE_DELAY} seconds**. Generating transcript...",
+            ephemeral=False
+        )
+        panel_label = PANELS[self.panel_key]["label"]
+        await _generate_and_post_transcript(interaction.channel, interaction.guild, panel_label)
+        await asyncio.sleep(CLOSE_DELAY)
+        try:
+            await interaction.channel.delete(reason="Ticket closed")
+        except Exception as e:
+            print(f"⚠️ Error deleting ticket channel: {e}")
+
+    @discord.ui.button(label="📄 Transcript", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript")
+    async def transcript(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _is_owner(interaction.user.id):
+            await interaction.response.send_message("❌ Only the server owner can generate transcripts.", ephemeral=True)
+            return
+        await interaction.response.send_message("📄 Generating transcript...", ephemeral=True)
+        panel_label = PANELS[self.panel_key]["label"]
+        link = await _generate_and_post_transcript(interaction.channel, interaction.guild, panel_label)
+        await interaction.followup.send(f"✅ Transcript ready: {link}", ephemeral=True)
+
+
+class CreateTicketView(discord.ui.View):
+    """Bottone Create Ticket nell'embed del panel."""
+    def __init__(self, panel_key: str):
+        super().__init__(timeout=None)
+        self.panel_key = panel_key
+
+    @discord.ui.button(label="📩 Create Ticket", style=discord.ButtonStyle.primary, custom_id="ticket_create_support")
+    async def create_support(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _handle_create_ticket(interaction, "support")
+
+    
+class CreateDealTicketView(discord.ui.View):
+    """Bottone Create Ticket per il panel deal."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="📩 Create Ticket", style=discord.ButtonStyle.primary, custom_id="ticket_create_deal")
+    async def create_deal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _handle_create_ticket(interaction, "deal")
+
+
+async def _handle_create_ticket(interaction: discord.Interaction, panel_key: str):
+    panel   = PANELS[panel_key]
+    guild   = interaction.guild
+    user    = interaction.user
+    category = guild.get_channel(panel["category_id"])
+
+    # Controlla se l'utente ha già un ticket aperto in questa categoria
+    if category:
+        for ch in category.text_channels:
+            if ch.topic and str(user.id) in ch.topic:
+                await interaction.response.send_message(
+                    f"❌ You already have an open ticket: {ch.mention}", ephemeral=True
+                )
+                return
+
+    await interaction.response.send_message("✅ Creating your ticket...", ephemeral=True)
+
+    # Numero progressivo
+    existing = [c.name for c in (category.text_channels if category else [])]
+    nums = []
+    for name in existing:
+        parts = name.rsplit("-", 1)
+        if len(parts) == 2 and parts[-1].isdigit():
+            nums.append(int(parts[-1]))
+    next_num = (max(nums) + 1) if nums else 1
+    channel_name = f"{panel['prefix']}-{next_num:04d}"
+
+    # Permessi: solo owner + utente
+    overwrites = {
+        guild.default_role:                    discord.PermissionOverwrite(view_channel=False),
+        user:                                  discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+    }
+    owner_member = guild.get_member(TICKET_OWNER_ID)
+    if owner_member:
+        overwrites[owner_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+    # Admin override
+    for role in guild.roles:
+        if role.permissions.administrator:
+            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+
+    ticket_ch = await guild.create_text_channel(
+        name=channel_name,
+        category=category,
+        overwrites=overwrites,
+        topic=f"Ticket by {user} ({user.id})",
+    )
+
+    embed = discord.Embed(
+        title=panel["label"],
+        description=f"Welcome {user.mention}!\nPlease describe your issue and a staff member will assist you shortly.",
+        color=panel["color"],
+    )
+    embed.set_footer(text=panel["footer"], icon_url=LOGO_URL)
+
+    control_view = TicketControlView(panel_key)
+    await ticket_ch.send(content=user.mention, embed=embed, view=control_view)
+    print(f"✅ Ticket created: {ticket_ch.name} for {user}")
+
+
+# ── Setup commands ─────────────────────────────────────────────────────────────
+
+@bot.command(name="ticket")
+async def ticket_setup(ctx, panel_key: str = "support"):
+    """!ticket support  oppure  !ticket deal — invia l'embed nel canale corrente."""
+    if ctx.author.id != TICKET_OWNER_ID:
+        await ctx.message.delete()
+        return
+    await ctx.message.delete()
+
+    panel_key = panel_key.lower()
+    if panel_key not in PANELS:
+        await ctx.send(f"❌ Unknown panel. Use: `!ticket support` or `!ticket deal`", delete_after=10)
+        return
+
+    panel = PANELS[panel_key]
+    embed = discord.Embed(
+        title=panel["label"],
+        description="To create a ticket use the **Create Ticket** button below.",
+        color=panel["color"],
+    )
+    embed.set_footer(text=panel["footer"], icon_url=LOGO_URL)
+
+    if panel_key == "support":
+        view = CreateTicketView("support")
+    else:
+        view = CreateDealTicketView()
+
+    await ctx.send(embed=embed, view=view)
+    print(f"✅ Ticket panel '{panel_key}' sent in #{ctx.channel.name}")
+
+
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
 @bot.event
@@ -1480,9 +1825,13 @@ if __name__ == "__main__":
     subprocess.run(["python", "-m", "playwright", "install-deps", "chromium"], check=False)
     print("✅ Chromium pronto")
 
-    while True:
-        try:
-            bot.run(token)
-        except Exception as e:
-            print(f"❌ Errore: {e} — nuovo tentativo tra 10 secondi...")
-            time.sleep(10)
+    async def main():
+        while True:
+            try:
+                await bot.start(token)
+            except Exception as e:
+                print(f"❌ Errore: {e} — nuovo tentativo tra 10 secondi...")
+                await asyncio.sleep(10)
+
+    import asyncio
+    asyncio.run(main())
