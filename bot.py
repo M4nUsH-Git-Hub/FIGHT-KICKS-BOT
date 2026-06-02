@@ -1667,7 +1667,7 @@ async def _generate_and_post_transcript(channel: discord.TextChannel, guild: dis
             if opener_member:
                 opener_avatar = opener_member.display_avatar.url
 
-    embed = discord.Embed(color=0x2f3136)
+    embed = discord.Embed(color=0x6B6B6B)
     embed.add_field(name="Ticket Name",  value=channel.name,   inline=True)
     panel_short = panel_label.replace("OPEN SUPPORT TICKET", "Support Ticket").replace("OPEN DEAL TICKET", "Deal Ticket")
     embed.add_field(name="Panel Name",   value=panel_short,    inline=True)
@@ -1696,8 +1696,10 @@ class TicketControlView(discord.ui.View):
         if not _is_owner(interaction.user.id):
             await interaction.response.send_message("❌ Only the server owner can close tickets.", ephemeral=True)
             return
+        log_ch = interaction.guild.get_channel(TICKET_LOG_CHANNEL_ID)
+        log_mention = log_ch.mention if log_ch else ""
         await interaction.response.send_message(
-            f"Ticket will be closed in **{CLOSE_DELAY} seconds**",
+            f"Ticket will be closed in **{CLOSE_DELAY} seconds**\nTranscript ready : {log_mention}",
             ephemeral=False
         )
         panel_label = PANELS[self.panel_key]["label"]
