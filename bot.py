@@ -1634,24 +1634,32 @@ async def _generate_and_post_transcript(channel: discord.TextChannel, guild: dis
     if not log_ch:
         return link
 
-    # Conta utenti
-    user_counts: dict[str, int] = {}
+    # Conta utenti con formato emoji | mention | ID
+    user_counts: dict[str, tuple] = {}
     for m in messages:
-        key = f"{m.author.mention} — {m.author}"
-        user_counts[key] = user_counts.get(key, 0) + 1
-    users_str = "\n".join(
-        f"{c} — {u}" for u, c in sorted(user_counts.items(), key=lambda x: -x[1])
-    )[:1000]
+        uid = m.author.id
+        if uid not in user_counts:
+            user_counts[uid] = (m.author.mention, str(uid), 0)
+        mention, mid, cnt = user_counts[uid]
+        user_counts[uid] = (mention, mid, cnt + 1)
+    sorted_users = sorted(user_counts.values(), key=lambda x: -x[2])
+    emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    users_lines = []
+    for i, (mention, mid, cnt) in enumerate(sorted_users):
+        emoji = emojis[i] if i < len(emojis) else f"{i+1}."
+        users_lines.append(f"{emoji} | {mention} | {mid}")
+    users_str = "\n".join(users_lines)[:1024]
 
     embed = discord.Embed(color=0x2f3136)
     embed.add_field(name="Ticket Name",  value=channel.name,   inline=True)
-    embed.add_field(name="Panel Name",   value=panel_label,    inline=True)
+    panel_short = panel_label.replace("OPEN SUPPORT TICKET", "Support Ticket").replace("OPEN DEAL TICKET", "Deal Ticket")
+    embed.add_field(name="Panel Name",   value=panel_short,    inline=True)
     embed.add_field(name="Messages",     value=str(len(messages)), inline=True)
     embed.add_field(name="Users in transcript", value=users_str or "—", inline=False)
     embed.set_footer(text="Ticket Support", icon_url=LOGO_URL)
 
     view = discord.ui.View()
-    view.add_item(discord.ui.Button(label="Direct Link", url=link, style=discord.ButtonStyle.link, emoji="🔗"))
+    view.add_item(discord.ui.Button(label="Direct Link", url=link, style=discord.ButtonStyle.link))
 
     await log_ch.send(embed=embed, view=view)
     return link
@@ -1670,7 +1678,7 @@ class TicketControlView(discord.ui.View):
             await interaction.response.send_message("❌ Only the server owner can close tickets.", ephemeral=True)
             return
         await interaction.response.send_message(
-            f"🔒 Ticket will be closed in **{CLOSE_DELAY} seconds**. Generating transcript...",
+            f"🔒 Ticket will be closed in **{CLOSE_DELAY} seconds**",
             ephemeral=False
         )
         panel_label = PANELS[self.panel_key]["label"]
@@ -1686,10 +1694,11 @@ class TicketControlView(discord.ui.View):
         if not _is_owner(interaction.user.id):
             await interaction.response.send_message("❌ Only the server owner can generate transcripts.", ephemeral=True)
             return
-        await interaction.response.send_message("📄 Generating transcript...", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
         panel_label = PANELS[self.panel_key]["label"]
         link = await _generate_and_post_transcript(interaction.channel, interaction.guild, panel_label)
-        await interaction.followup.send(f"✅ Transcript ready: {link}", ephemeral=True)
+        log_ch = interaction.guild.get_channel(TICKET_LOG_CHANNEL_ID)
+        await interaction.followup.send(f"Transcript ready : {log_ch.mention if log_ch else str(TICKET_LOG_CHANNEL_ID)}", ephemeral=True)
 
 
 class CreateTicketView(discord.ui.View):
