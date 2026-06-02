@@ -288,6 +288,9 @@ async def on_ready():
     # Avvia member counter
     if not update_member_count.is_running():
         update_member_count.start()
+    # Carica cache inviti
+    for guild in bot.guilds:
+        await _build_invite_cache(guild)
     # Registra views persistenti ticket (sopravvivono ai restart)
     bot.add_view(CreateTicketView("support"))
     bot.add_view(CreateDealTicketView())
@@ -1858,6 +1861,76 @@ async def update_member_count():
 @update_member_count.before_loop
 async def before_member_count():
     await bot.wait_until_ready()
+
+
+# ── Invite Logger ─────────────────────────────────────────────────────────────
+
+INVITE_LOG_CHANNEL_ID = 1416338500764307538
+
+# Cache inviti: guild_id -> {code: uses}
+_invite_cache: dict[int, dict[str, int]] = {}
+
+async def _build_invite_cache(guild: discord.Guild):
+    try:
+        invites = await guild.fetch_invites()
+        _invite_cache[guild.id] = {inv.code: inv.uses for inv in invites}
+    except Exception as e:
+        print(f"⚠️ Invite cache errore: {e}")
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    guild = member.guild
+    channel = guild.get_channel(INVITE_LOG_CHANNEL_ID)
+    if not channel:
+        return
+
+    # Leggi inviti aggiornati
+    try:
+        new_invites = await guild.fetch_invites()
+    except Exception as e:
+        print(f"⚠️ fetch_invites errore: {e}")
+        return
+
+    old_cache = _invite_cache.get(guild.id, {})
+    inviter = None
+    invite_uses = 0
+
+    for inv in new_invites:
+        old_uses = old_cache.get(inv.code, 0)
+        if inv.uses > old_uses:
+            inviter = inv.inviter
+            invite_uses = inv.uses
+            break
+
+    # Aggiorna cache
+    _invite_cache[guild.id] = {inv.code: inv.uses for inv in new_invites}
+
+    embed = discord.Embed(color=0x6B6B6B)
+    embed.set_thumbnail(url=member.display_avatar.url)
+
+    if inviter:
+        embed.description = (
+            f"{member.mention} just joined. "
+            f"They were invited by {inviter.mention} "
+            f"who now has **{invite_uses} invites**"
+        )
+    else:
+        embed.description = f"{member.mention} just joined"
+
+    embed.set_footer(text="Fight Kicks", icon_url=LOGO_URL)
+    await channel.send(embed=embed)
+    print(f"✅ Join log: {member} invited by {inviter}")
+
+@bot.event
+async def on_invite_create(invite: discord.Invite):
+    if invite.guild:
+        cache = _invite_cache.setdefault(invite.guild.id, {})
+        cache[invite.code] = invite.uses or 0
+
+@bot.event
+async def on_invite_delete(invite: discord.Invite):
+    if invite.guild:
+        _invite_cache.get(invite.guild.id, {}).pop(invite.code, None)
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
