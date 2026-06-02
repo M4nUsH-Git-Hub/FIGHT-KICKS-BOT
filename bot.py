@@ -1769,8 +1769,8 @@ async def _handle_create_ticket(interaction: discord.Interaction, panel_key: str
         "deal":    "Provide the product data and the agreed price, the staff will be with you as soon as possible",
     }
     titles = {
-        "support": "Welcome to Support Ticket",
-        "deal":    "Welcome to Deal Ticket",
+        "support": "WELCOME TO SUPPORT TICKET",
+        "deal":    "WELCOME TO DEAL TICKET",
     }
     embed = discord.Embed(
         title=titles[panel_key],
@@ -1781,7 +1781,7 @@ async def _handle_create_ticket(interaction: discord.Interaction, panel_key: str
 
     control_view = TicketControlView(panel_key)
     await ticket_ch.send(content=user.mention, embed=embed, view=control_view)
-    await interaction.followup.send(f"✅ Your ticket has been created: {ticket_ch.mention}", ephemeral=True)
+    await interaction.followup.send(f"Your ticket has been created : {ticket_ch.mention}", ephemeral=True)
     print(f"✅ Ticket created: {ticket_ch.name} for {user}")
 
 
