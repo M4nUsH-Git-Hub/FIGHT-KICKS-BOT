@@ -1913,12 +1913,9 @@ async def on_member_join(member: discord.Member):
         lines.append(f"**Invited by :** {inviter.mention}")
         lines.append(f"**Invites :** `{invite_uses}`")
 
-    now = member.joined_at or discord.utils.utcnow()
-    timestamp = now.strftime("%d/%m/%Y %H:%M")
-
     embed = discord.Embed(description="\n".join(lines), color=0x6B6B6B)
     embed.set_thumbnail(url=member.display_avatar.url)
-    embed.set_footer(text=f"New Members • {timestamp}", icon_url=LOGO_URL)
+    embed.set_footer(text="New Members", icon_url=LOGO_URL)
     await channel.send(embed=embed)
     print(f"✅ Join log: {member} invited by {inviter}")
 
