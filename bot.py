@@ -1656,12 +1656,25 @@ async def _generate_and_post_transcript(channel: discord.TextChannel, guild: dis
         users_lines.append(f"{emoji} | {mention} | `{mid}`")
     users_str = "\n".join(users_lines)[:1024]
 
+    # Trova chi ha aperto il ticket dal topic del canale
+    opener_avatar = None
+    if channel.topic:
+        import re
+        match = re.search(r'\((\d+)\)', channel.topic)
+        if match:
+            opener_id = int(match.group(1))
+            opener_member = channel.guild.get_member(opener_id)
+            if opener_member:
+                opener_avatar = opener_member.display_avatar.url
+
     embed = discord.Embed(color=0x2f3136)
     embed.add_field(name="Ticket Name",  value=channel.name,   inline=True)
     panel_short = panel_label.replace("OPEN SUPPORT TICKET", "Support Ticket").replace("OPEN DEAL TICKET", "Deal Ticket")
     embed.add_field(name="Panel Name",   value=panel_short,    inline=True)
     embed.add_field(name="Messages",     value=str(len(messages)), inline=True)
     embed.add_field(name="Users in transcript", value=users_str or "—", inline=False)
+    if opener_avatar:
+        embed.set_thumbnail(url=opener_avatar)
     embed.set_footer(text="Ticket Support", icon_url=LOGO_URL)
 
     view = discord.ui.View()
@@ -1967,7 +1980,7 @@ async def purge(ctx, amount: int = 10):
         return
     await ctx.message.delete()
     deleted = await ctx.channel.purge(limit=amount)
-    await ctx.send(f"{len(deleted)} messaggi eliminati", delete_after=3)
+
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
