@@ -1681,7 +1681,7 @@ class TicketControlView(discord.ui.View):
         except Exception as e:
             print(f"⚠️ Error deleting ticket channel: {e}")
 
-    @discord.ui.button(label="📄 Transcript", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript")
+    @discord.ui.button(label="📄 Transcript", style=discord.ButtonStyle.primary, custom_id="ticket_transcript")
     async def transcript(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not _is_owner(interaction.user.id):
             await interaction.response.send_message("❌ Only the server owner can generate transcripts.", ephemeral=True)
@@ -1764,9 +1764,17 @@ async def _handle_create_ticket(interaction: discord.Interaction, panel_key: str
         topic=f"Ticket by {user} ({user.id})",
     )
 
+    descriptions = {
+        "support": "Describe your need, the staff will be with you as soon as possible",
+        "deal":    "Provide the product data and the agreed price, the staff will be with you as soon as possible",
+    }
+    titles = {
+        "support": "Welcome to Support Ticket",
+        "deal":    "Welcome to Deal Ticket",
+    }
     embed = discord.Embed(
-        title=panel["label"],
-        description=f"Welcome {user.mention}!\nPlease describe your issue and a staff member will assist you shortly.",
+        title=titles[panel_key],
+        description=descriptions[panel_key],
         color=panel["color"],
     )
     embed.set_footer(text=panel["footer"], icon_url=LOGO_URL)
