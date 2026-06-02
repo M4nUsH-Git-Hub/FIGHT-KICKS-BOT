@@ -1598,11 +1598,43 @@ def _ticket_number(channel_name: str) -> str:
 def _is_owner(user_id: int) -> bool:
     return user_id == TICKET_OWNER_ID
 
+def _render_discord_text(text: str, guild) -> str:
+    """Converte markdown Discord e mention in HTML leggibile."""
+    import re
+    # **bold**
+    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    # *italic*
+    text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+    # `code`
+    text = re.sub(r'`([^`]+)`', r'<code style="background:#202225;padding:1px 4px;border-radius:3px">\1</code>', text)
+    # User mentions <@ID>
+    def replace_user(m):
+        uid = int(m.group(1))
+        member = guild.get_member(uid) if guild else None
+        name = str(member) if member else str(uid)
+        return f'<span style="color:#7289da;background:#3c4270;padding:0 3px;border-radius:3px">@{name}</span>'
+    text = re.sub(r'<@!?(\d+)>', replace_user, text)
+    # Channel mentions <#ID>
+    def replace_channel(m):
+        cid = int(m.group(1))
+        ch = guild.get_channel(cid) if guild else None
+        name = ch.name if ch else str(cid)
+        return f'<span style="color:#7289da;background:#3c4270;padding:0 3px;border-radius:3px">#{name}</span>'
+    text = re.sub(r'<#(\d+)>', replace_channel, text)
+    # Role mentions <@&ID>
+    def replace_role(m):
+        rid = int(m.group(1))
+        role = guild.get_role(rid) if guild else None
+        name = role.name if role else str(rid)
+        return f'<span style="color:#7289da">@{name}</span>'
+    text = re.sub(r'<@&(\d+)>', replace_role, text)
+    return text
+
 def _format_message_html(msg: discord.Message) -> str:
     avatar = msg.author.display_avatar.url if msg.author.display_avatar else ""
-    name   = discord.utils.escape_mentions(str(msg.author))
+    name   = str(msg.author)
     ts     = msg.created_at.strftime("%d/%m/%Y %H:%M")
-    text   = discord.utils.escape_mentions(msg.content or "")
+    text   = _render_discord_text(msg.content or "", msg.guild)
     text   = text.replace("\n", "<br>")
 
     attachments_html = ""
