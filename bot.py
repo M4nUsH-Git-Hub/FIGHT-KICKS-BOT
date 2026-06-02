@@ -1872,7 +1872,7 @@ _invite_cache: dict[int, dict[str, int]] = {}
 
 async def _build_invite_cache(guild: discord.Guild):
     try:
-        invites = await guild.fetch_invites()
+        invites = await guild.invites()
         _invite_cache[guild.id] = {inv.code: inv.uses for inv in invites}
     except Exception as e:
         print(f"⚠️ Invite cache errore: {e}")
@@ -1886,7 +1886,7 @@ async def on_member_join(member: discord.Member):
 
     # Leggi inviti aggiornati
     try:
-        new_invites = await guild.fetch_invites()
+        new_invites = await guild.invites()
     except Exception as e:
         print(f"⚠️ fetch_invites errore: {e}")
         return
