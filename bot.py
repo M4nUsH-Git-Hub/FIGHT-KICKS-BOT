@@ -1647,7 +1647,7 @@ async def _generate_and_post_transcript(channel: discord.TextChannel, guild: dis
     users_lines = []
     for i, (mention, mid, cnt) in enumerate(sorted_users):
         emoji = emojis[i] if i < len(emojis) else f"{i+1}."
-        users_lines.append(f"{emoji} | {mention} | {mid}")
+        users_lines.append(f"{emoji} | {mention} | `{mid}`")
     users_str = "\n".join(users_lines)[:1024]
 
     embed = discord.Embed(color=0x2f3136)
@@ -1678,7 +1678,7 @@ class TicketControlView(discord.ui.View):
             await interaction.response.send_message("❌ Only the server owner can close tickets.", ephemeral=True)
             return
         await interaction.response.send_message(
-            f"🔒 Ticket will be closed in **{CLOSE_DELAY} seconds**",
+            f"Ticket will be closed in **{CLOSE_DELAY} seconds**",
             ephemeral=False
         )
         panel_label = PANELS[self.panel_key]["label"]
