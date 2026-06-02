@@ -136,6 +136,33 @@ def save_transcript_to_gist(filename: str, html_content: str) -> str | None:
         print(f"⚠️ Gist transcript save fallito: {e}")
         return None
 
+
+
+async def _load_transcripts_from_gist():
+    """Ricarica i transcript salvati su Gist in memoria al riavvio del bot."""
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"https://api.github.com/gists/{TRANSCRIPT_GIST_ID}",
+                headers={
+                    "Authorization": f"token {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github+json",
+                }
+            ) as resp:
+                result = await resp.json()
+                files = result.get("files", {})
+                for fname, fdata in files.items():
+                    if fname.endswith(".html"):
+                        # Estrai token dal nome file: transcript-deal-0001-TOKEN.html
+                        parts = fname.replace(".html", "").rsplit("-", 1)
+                        if len(parts) == 2:
+                            token = parts[1]
+                            _transcript_store[token] = fdata.get("content", "")
+                print(f"✅ {len(_transcript_store)} transcript ricaricati dal Gist")
+    except Exception as e:
+        print(f"⚠️ Errore ricarica transcript: {e}")
+
 def get_guild_config(guild_id: int) -> dict:
     cfg = load_config()
     key = str(guild_id)
@@ -323,6 +350,8 @@ async def on_ready():
     # Carica cache inviti
     for guild in bot.guilds:
         await _build_invite_cache(guild)
+    # Ricarica transcript dal Gist in memoria
+    await _load_transcripts_from_gist()
     # Registra views persistenti ticket (sopravvivono ai restart)
     bot.add_view(CreateTicketView("support"))
     bot.add_view(CreateDealTicketView())
@@ -1662,14 +1691,14 @@ async def _generate_and_post_transcript(channel: discord.TextChannel, guild: dis
     token = secrets.token_urlsafe(16)
     _transcript_store[token] = html
 
-    # Salva su Gist per link permanente
+    # Salva su Gist come backup persistente
     filename = f"transcript-{channel.name}-{token[:8]}.html"
-    gist_url = save_transcript_to_gist(filename, html)
+    import asyncio as _asyncio
+    _asyncio.get_event_loop().run_in_executor(None, save_transcript_to_gist, filename, html)
 
+    # Link Railway per aprire correttamente la pagina HTML
     base_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
-    if gist_url:
-        link = gist_url
-    elif base_url:
+    if base_url:
         link = f"https://{base_url}/transcript/{token}"
     else:
         link = f"http://localhost:{os.environ.get('PORT', 8080)}/transcript/{token}"
