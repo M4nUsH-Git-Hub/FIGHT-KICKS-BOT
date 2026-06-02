@@ -1919,6 +1919,15 @@ async def on_member_join(member: discord.Member):
     await channel.send(embed=embed)
     print(f"✅ Join log: {member} invited by {inviter}")
 
+    # Assegna ruolo automatico
+    role = member.guild.get_role(AUTO_ROLE_ID)
+    if role:
+        try:
+            await member.add_roles(role)
+            print(f"✅ Auto role assegnato: {role.name} → {member}")
+        except Exception as e:
+            print(f"⚠️ Errore auto role: {e}")
+
 @bot.event
 async def on_invite_create(invite: discord.Invite):
     if invite.guild:
@@ -1929,6 +1938,36 @@ async def on_invite_create(invite: discord.Invite):
 async def on_invite_delete(invite: discord.Invite):
     if invite.guild:
         _invite_cache.get(invite.guild.id, {}).pop(invite.code, None)
+
+
+# ── Auto Role ─────────────────────────────────────────────────────────────────
+
+AUTO_ROLE_ID = 1416724423607713883
+
+@bot.event
+async def on_member_join_autorole(member: discord.Member):
+    role = member.guild.get_role(AUTO_ROLE_ID)
+    if role:
+        try:
+            await member.add_roles(role)
+            print(f"✅ Ruolo assegnato: {role.name} → {member}")
+        except Exception as e:
+            print(f"⚠️ Errore assegnazione ruolo: {e}")
+
+
+# ── Purge ─────────────────────────────────────────────────────────────────────
+
+@bot.command(name="purge")
+async def purge(ctx, amount: int = 10):
+    if ctx.author.id != TICKET_OWNER_ID:
+        await ctx.message.delete()
+        return
+    if amount < 1 or amount > 100:
+        await ctx.send("❌ Inserisci un numero tra 1 e 100.", delete_after=5)
+        return
+    await ctx.message.delete()
+    deleted = await ctx.channel.purge(limit=amount)
+    await ctx.send(f"{len(deleted)} messaggi eliminati", delete_after=3)
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
