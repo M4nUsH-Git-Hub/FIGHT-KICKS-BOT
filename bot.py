@@ -1748,6 +1748,10 @@ async def _handle_create_ticket(interaction: discord.Interaction, panel_key: str
     owner_member = guild.get_member(TICKET_OWNER_ID)
     if owner_member:
         overwrites[owner_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+    # Bot stesso — appare nella lista membri del ticket
+    bot_member = guild.get_member(bot.user.id)
+    if bot_member:
+        overwrites[bot_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
     # Admin override
     for role in guild.roles:
         if role.permissions.administrator:
@@ -1790,7 +1794,7 @@ async def ticket_setup(ctx, panel_key: str = "support"):
     panel = PANELS[panel_key]
     embed = discord.Embed(
         title=panel["label"],
-        description="To create a ticket use the **Create Ticket** button below.",
+        description="To create a ticket use the **Create Ticket** button below",
         color=panel["color"],
     )
     embed.set_footer(text=panel["footer"], icon_url=LOGO_URL)
