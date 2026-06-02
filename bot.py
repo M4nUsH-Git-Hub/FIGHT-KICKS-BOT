@@ -1850,7 +1850,7 @@ async def update_member_count():
         if not role:
             continue
         count = len(role.members)
-        new_name = f"Members : {count}"
+        new_name = f"💻│Members : {count}"
         if channel.name != new_name:
             try:
                 await channel.edit(name=new_name)
@@ -1905,19 +1905,21 @@ async def on_member_join(member: discord.Member):
     # Aggiorna cache
     _invite_cache[guild.id] = {inv.code: inv.uses for inv in new_invites}
 
+    created_at = discord.utils.format_dt(member.created_at, style="D")
+
     embed = discord.Embed(color=0x6B6B6B)
     embed.set_thumbnail(url=member.display_avatar.url)
 
     if inviter:
         embed.description = (
-            f"{member.mention} just joined. "
-            f"They were invited by {inviter.mention} "
-            f"who now has **{invite_uses} invites**"
+            f"{member.mention} just joined\n"
+            f"They were invited by {inviter.mention} who now has **{invite_uses} invites**"
         )
     else:
         embed.description = f"{member.mention} just joined"
 
-    embed.set_footer(text="Fight Kicks", icon_url=LOGO_URL)
+    embed.add_field(name="📅", value=f"`{created_at}`", inline=False)
+    embed.set_footer(text="New Members", icon_url=LOGO_URL)
     await channel.send(embed=embed)
     print(f"✅ Join log: {member} invited by {inviter}")
 
