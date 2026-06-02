@@ -1480,11 +1480,11 @@ CLOSE_DELAY           = 5  # secondi prima dell'eliminazione
 
 PANELS = {
     "support": {
-        "label":        "OPEN TICKET SUPPORT",
+        "label":        "OPEN SUPPORT TICKET",
         "button_label": "📩 Create Ticket",
-        "footer":       "Ticket Support",
+        "footer":       "Support Ticket",
         "category_id":  1416824941042471072,
-        "color":        0x2ecc71,
+        "color":        0x6B6B6B,
         "prefix":       "support",
     },
     "deal": {
@@ -1492,7 +1492,7 @@ PANELS = {
         "button_label": "📩 Create Ticket",
         "footer":       "Deal Ticket",
         "category_id":  1416823933445083316,
-        "color":        0xe67e22,
+        "color":        0x6B6B6B,
         "prefix":       "deal",
     },
 }
