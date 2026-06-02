@@ -1728,7 +1728,7 @@ async def _handle_create_ticket(interaction: discord.Interaction, panel_key: str
                 )
                 return
 
-    await interaction.response.send_message("✅ Creating your ticket...", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
 
     # Numero progressivo
     existing = [c.name for c in (category.text_channels if category else [])]
@@ -1781,6 +1781,7 @@ async def _handle_create_ticket(interaction: discord.Interaction, panel_key: str
 
     control_view = TicketControlView(panel_key)
     await ticket_ch.send(content=user.mention, embed=embed, view=control_view)
+    await interaction.followup.send(f"✅ Your ticket has been created: {ticket_ch.mention}", ephemeral=True)
     print(f"✅ Ticket created: {ticket_ch.name} for {user}")
 
 
