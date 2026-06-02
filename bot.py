@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 GITHUB_TOKEN = "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"
 GITHUB_GIST_ID = "6cda801fb93b5515a36bfab543a5d0e1"
+TRANSCRIPT_GIST_ID = "6ca31faba6736a24f456685d0408335a"
 
 _config_cache = {}
 
@@ -103,6 +104,37 @@ def save_config(data: dict):
     except Exception as e:
         print(f"⚠️ Gist save fallito ({e}), salvato solo in locale")
 
+
+
+
+def save_transcript_to_gist(filename: str, html_content: str) -> str | None:
+    """Salva un transcript HTML nel Gist dedicato e restituisce il link raw."""
+    try:
+        payload = json.dumps({
+            "files": {
+                filename: {
+                    "content": html_content
+                }
+            }
+        }).encode()
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{TRANSCRIPT_GIST_ID}",
+            data=payload,
+            headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+            method="PATCH"
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode())
+            raw_url = result["files"][filename]["raw_url"]
+            print(f"✅ Transcript salvato su Gist: {raw_url}")
+            return raw_url
+    except Exception as e:
+        print(f"⚠️ Gist transcript save fallito: {e}")
+        return None
 
 def get_guild_config(guild_id: int) -> dict:
     cfg = load_config()
@@ -1630,8 +1662,14 @@ async def _generate_and_post_transcript(channel: discord.TextChannel, guild: dis
     token = secrets.token_urlsafe(16)
     _transcript_store[token] = html
 
+    # Salva su Gist per link permanente
+    filename = f"transcript-{channel.name}-{token[:8]}.html"
+    gist_url = save_transcript_to_gist(filename, html)
+
     base_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
-    if base_url:
+    if gist_url:
+        link = gist_url
+    elif base_url:
         link = f"https://{base_url}/transcript/{token}"
     else:
         link = f"http://localhost:{os.environ.get('PORT', 8080)}/transcript/{token}"
