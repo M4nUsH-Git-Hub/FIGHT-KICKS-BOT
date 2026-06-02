@@ -285,6 +285,9 @@ async def on_ready():
     # Avvia task giveaway
     if not giveaway_check.is_running():
         giveaway_check.start()
+    # Avvia member counter
+    if not update_member_count.is_running():
+        update_member_count.start()
     # Registra views persistenti ticket (sopravvivono ai restart)
     bot.add_view(CreateTicketView("support"))
     bot.add_view(CreateDealTicketView())
@@ -1825,6 +1828,36 @@ async def ticket_setup(ctx, panel_key: str = "support"):
     await ctx.send(embed=embed, view=view)
     print(f"✅ Ticket panel '{panel_key}' sent in #{ctx.channel.name}")
 
+
+
+
+
+# ── Member Counter ────────────────────────────────────────────────────────────
+
+MEMBER_COUNT_CHANNEL_ID = 1416747222250426511
+MEMBER_COUNT_ROLE_ID    = 1416724423607713883
+
+@tasks.loop(minutes=15)
+async def update_member_count():
+    for guild in bot.guilds:
+        channel = guild.get_channel(MEMBER_COUNT_CHANNEL_ID)
+        if not channel:
+            continue
+        role = guild.get_role(MEMBER_COUNT_ROLE_ID)
+        if not role:
+            continue
+        count = len(role.members)
+        new_name = f"Members : {count}"
+        if channel.name != new_name:
+            try:
+                await channel.edit(name=new_name)
+                print(f"✅ Member count aggiornato: {new_name}")
+            except Exception as e:
+                print(f"⚠️ Errore aggiornamento member count: {e}")
+
+@update_member_count.before_loop
+async def before_member_count():
+    await bot.wait_until_ready()
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
