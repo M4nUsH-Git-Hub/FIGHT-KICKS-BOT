@@ -1905,20 +1905,16 @@ async def on_member_join(member: discord.Member):
     # Aggiorna cache
     _invite_cache[guild.id] = {inv.code: inv.uses for inv in new_invites}
 
-    created_at = discord.utils.format_dt(member.created_at, style="D")
+    created_at = member.created_at.strftime("%d %B %Y")
 
-    embed = discord.Embed(color=0x6B6B6B)
-    embed.set_thumbnail(url=member.display_avatar.url)
-
+    lines = [f"**New Member :** {member.mention}"]
     if inviter:
-        embed.description = (
-            f"{member.mention} just joined\n"
-            f"They were invited by {inviter.mention} who now has **{invite_uses} invites**"
-        )
-    else:
-        embed.description = f"{member.mention} just joined"
+        lines.append(f"**Invited by :** {inviter.mention}")
+        lines.append(f"**Invites :** `{invite_uses}`")
+    lines.append(f"**Account created :** `{created_at}`")
 
-    embed.add_field(name="📅", value=f"`{created_at}`", inline=False)
+    embed = discord.Embed(description="\n".join(lines), color=0x6B6B6B)
+    embed.set_thumbnail(url=member.display_avatar.url)
     embed.set_footer(text="New Members", icon_url=LOGO_URL)
     await channel.send(embed=embed)
     print(f"✅ Join log: {member} invited by {inviter}")
