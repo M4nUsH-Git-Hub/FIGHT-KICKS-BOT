@@ -1,4 +1,4 @@
-ù"""
+"""
 Discord Ping Backup Bot — PINGER ONLY
 ======================================
 Archivia automaticamente tutti i messaggi con @everyone, @here o menzioni di ruolo
