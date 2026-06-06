@@ -2083,6 +2083,58 @@ async def purge(ctx, amount: int = 10):
     deleted = await ctx.channel.purge(limit=amount)
 
 
+
+# ── Ban / Unban ───────────────────────────────────────────────────────────────
+
+@bot.command(name="ban")
+async def ban(ctx, user_input: str, *, reason: str = "No reason provided"):
+    if ctx.author.id != TICKET_OWNER_ID:
+        await ctx.message.delete()
+        return
+    await ctx.message.delete()
+
+    # Supporta sia mention che ID numerico
+    user_id = None
+    if user_input.startswith("<@") and user_input.endswith(">"):
+        user_id = int(user_input.strip("<@!>"))
+    elif user_input.isdigit():
+        user_id = int(user_input)
+
+    if not user_id:
+        await ctx.send("❌ Utente non valido. Usa `!ban @utente` o `!ban ID`", delete_after=5)
+        return
+
+    try:
+        await ctx.guild.ban(discord.Object(id=user_id), reason=reason, delete_message_days=0)
+        msg = f"User `{user_id}` has been banned\nReason : `{reason}`"
+        await ctx.send(msg, delete_after=10)
+        print(f"✅ Bannato: {user_id} — {reason}")
+    except discord.NotFound:
+        await ctx.send("❌ Utente non trovato.", delete_after=5)
+    except discord.Forbidden:
+        await ctx.send("❌ Non ho i permessi per bannare questo utente.", delete_after=5)
+    except Exception as e:
+        await ctx.send(f"❌ Errore: {e}", delete_after=5)
+
+
+@bot.command(name="unban")
+async def unban(ctx, user_id: int):
+    if ctx.author.id != TICKET_OWNER_ID:
+        await ctx.message.delete()
+        return
+    await ctx.message.delete()
+
+    try:
+        await ctx.guild.unban(discord.Object(id=user_id))
+        await ctx.send(f"User `{user_id}` has been unbanned", delete_after=10)
+        print(f"✅ Unbannato: {user_id}")
+    except discord.NotFound:
+        await ctx.send("❌ Utente non trovato nei ban.", delete_after=5)
+    except discord.Forbidden:
+        await ctx.send("❌ Non ho i permessi per sbannare.", delete_after=5)
+    except Exception as e:
+        await ctx.send(f"❌ Errore: {e}", delete_after=5)
+
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
 @bot.event
