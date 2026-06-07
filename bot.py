@@ -1870,6 +1870,8 @@ async def _handle_create_ticket(interaction: discord.Interaction, panel_key: str
     channel_name = f"{panel['prefix']}-{next_num:04d}"
 
     # Permessi: solo owner + utente
+    SUPPORT_STAFF_ID = 1417768260044325005
+
     overwrites = {
         guild.default_role:                    discord.PermissionOverwrite(view_channel=False),
         user:                                  discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
@@ -1881,6 +1883,11 @@ async def _handle_create_ticket(interaction: discord.Interaction, panel_key: str
     bot_member = guild.get_member(bot.user.id)
     if bot_member:
         overwrites[bot_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+    # Staff aggiuntivo solo per ticket support
+    if panel_key == "support":
+        staff_member = guild.get_member(SUPPORT_STAFF_ID)
+        if staff_member:
+            overwrites[staff_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
     # Admin override
     for role in guild.roles:
         if role.permissions.administrator:
