@@ -1809,12 +1809,21 @@ async def on_member_join(member: discord.Member):
     inviter = None
     invite_uses = 0
 
+    # Mappa codici invito personalizzati
+    INVITE_LABELS = {
+        "2aetYnaNSy": ("Instagram", None),
+        "Vd7C7Wjx3c": (None, 734909407825100813),  # mention owner
+    }
+
     for inv in new_invites:
         old_uses = old_cache.get(inv.code, 0)
         if inv.uses > old_uses:
             inviter = inv.inviter
             invite_uses = inv.uses
+            invite_code = inv.code
             break
+    else:
+        invite_code = None
 
     # Aggiorna cache
     _invite_cache[guild.id] = {inv.code: inv.uses for inv in new_invites}
@@ -1823,7 +1832,14 @@ async def on_member_join(member: discord.Member):
 
     lines = [f"**New Member :** {member.mention}"]
     lines.append(f"**Account created :** `{created_at}`")
-    if inviter:
+    if invite_code and invite_code in INVITE_LABELS:
+        label, owner_id = INVITE_LABELS[invite_code]
+        if label:
+            lines.append(f"**Invited by :** {label}")
+        else:
+            lines.append(f"**Invited by :** <@{owner_id}>")
+        lines.append(f"**Invites :** `{invite_uses}`")
+    elif inviter:
         lines.append(f"**Invited by :** {inviter.mention}")
         lines.append(f"**Invites :** `{invite_uses}`")
 
