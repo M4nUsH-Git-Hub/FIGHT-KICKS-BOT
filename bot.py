@@ -774,7 +774,7 @@ async def wtb(
     embed.set_footer(text="WTB Monitor", icon_url=FOOTER_ICON_WTB)
     embed.timestamp = datetime.now(timezone.utc)
 
-    await channel.send(content="<@&1427396900801347594>", embed=embed)
+    await channel.send(embed=embed)
     await send_to_webhooks(embed)
     await interaction.followup.send(f"✅ WTB inviato — {nome} {taglia} | Webhook: {len(get_webhooks())}", ephemeral=True)
     print(f"✅ WTB inviato — {nome} | img:{'✅' if img_url else '❌'} | webhook:{len(get_webhooks())}")
