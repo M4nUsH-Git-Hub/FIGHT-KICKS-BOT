@@ -1811,8 +1811,9 @@ async def on_member_join(member: discord.Member):
 
     # Mappa codici invito personalizzati
     INVITE_LABELS = {
-        "2aetYnaNSy": ("`Instagram`", None),
-        "Vd7C7Wjx3c": (None, 734909407825100813),  # mention owner
+        "7qXpwSuPuN": ("`Social`", None),
+        "2aetYnaNSy": ("`Discord`", None),
+        "Vd7C7Wjx3c": ("`Instagram`", None),
     }
 
     for inv in new_invites:
