@@ -1952,6 +1952,59 @@ async def unban(ctx, user_id: int):
     except Exception as e:
         await ctx.send(f"❌ Errore: {e}", delete_after=5)
 
+
+# ── Timestamp Generator ───────────────────────────────────────────────────────
+
+@tree.command(name="timestamp", description="Genera un timestamp Discord da data e ora")
+@app_commands.describe(
+    giorno="Giorno (1-31)",
+    mese="Mese (1-12)",
+    anno="Anno (es. 2026)",
+    ora="Ora (0-23)",
+    minuti="Minuti (0-59)"
+)
+async def timestamp_cmd(
+    interaction: discord.Interaction,
+    giorno: int,
+    mese: int,
+    anno: int,
+    ora: int,
+    minuti: int
+):
+    from datetime import datetime
+    import zoneinfo
+
+    tz = zoneinfo.ZoneInfo("Europe/Rome")
+    try:
+        dt = datetime(anno, mese, giorno, ora, minuti, tzinfo=tz)
+    except ValueError as e:
+        await interaction.response.send_message(f"❌ Data non valida : `{e}`", ephemeral=True)
+        return
+
+    ts = int(dt.timestamp())
+
+    date_str = dt.strftime("%d/%m/%Y at %H:%M")
+    now_str = discord.utils.utcnow().astimezone(tz).strftime("%d/%m/%Y at %H:%M")
+
+    embed = discord.Embed(
+        title="Timestamp Generator",
+        description=f"📅 **{date_str}**",
+        color=0x6B6B6B
+    )
+    embed.add_field(
+        name="Raffle",
+        value=f"`<t:{ts}:f>`",
+        inline=False
+    )
+    embed.add_field(
+        name="Remainder",
+        value=f"`{ts}`",
+        inline=False
+    )
+    embed.set_footer(text=f"Staff Commands • {now_str}", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
 @bot.event
