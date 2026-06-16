@@ -1984,11 +1984,10 @@ async def timestamp_cmd(
     ts = int(dt.timestamp())
 
     date_str = dt.strftime("%d/%m/%Y at %H:%M")
-    now_str = discord.utils.utcnow().astimezone(tz).strftime("%d/%m/%Y at %H:%M")
 
     embed = discord.Embed(
         title="Timestamp Generator",
-        description=f"📅 **{date_str}**",
+        description=f"**{date_str}**",
         color=0x6B6B6B
     )
     embed.add_field(
@@ -2001,7 +2000,39 @@ async def timestamp_cmd(
         value=f"`{ts}`",
         inline=False
     )
-    embed.set_footer(text=f"Staff Commands • {now_str}", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
+    embed.set_footer(text="Staff Commands", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ── Release Countdown ─────────────────────────────────────────────────────────
+
+@tree.command(name="release", description="Calcola la data di release da giorni/ore/minuti")
+@app_commands.describe(
+    giorni="Giorni che mancano",
+    ore="Ore che mancano",
+    minuti="Minuti che mancano"
+)
+async def release_cmd(
+    interaction: discord.Interaction,
+    giorni: int = 0,
+    ore: int = 0,
+    minuti: int = 0
+):
+    from datetime import datetime, timedelta
+    import zoneinfo
+
+    tz = zoneinfo.ZoneInfo("Europe/Rome")
+    now = datetime.now(tz)
+    release = now + timedelta(days=giorni, hours=ore, minutes=minuti)
+    ts = int(release.timestamp())
+    date_str = release.strftime("%d/%m/%Y at %H:%M")
+
+    embed = discord.Embed(color=0x6B6B6B)
+    embed.add_field(name="Release date :", value=f"`{date_str}`", inline=False)
+    embed.add_field(name="Raffle :", value=f"`<t:{ts}:f>`", inline=False)
+    embed.add_field(name="Remainder :", value=f"`{ts}`", inline=False)
+    embed.set_footer(text="Staff Commands", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
