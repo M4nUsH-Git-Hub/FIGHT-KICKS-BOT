@@ -1959,7 +1959,6 @@ async def unban(ctx, user_id: int):
 @app_commands.describe(
     giorno="Giorno (1-31)",
     mese="Mese (1-12)",
-    anno="Anno (es. 2026)",
     ora="Ora (0-23)",
     minuti="Minuti (0-59)"
 )
@@ -1967,7 +1966,6 @@ async def timestamp_cmd(
     interaction: discord.Interaction,
     giorno: int,
     mese: int,
-    anno: int,
     ora: int,
     minuti: int
 ):
@@ -1975,6 +1973,7 @@ async def timestamp_cmd(
     import zoneinfo
 
     tz = zoneinfo.ZoneInfo("Europe/Rome")
+    anno = datetime.now(zoneinfo.ZoneInfo("Europe/Rome")).year
     try:
         dt = datetime(anno, mese, giorno, ora, minuti, tzinfo=tz)
     except ValueError as e:
