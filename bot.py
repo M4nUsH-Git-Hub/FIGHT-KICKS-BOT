@@ -2036,6 +2036,32 @@ async def release_cmd(
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+
+# ── Percentuale ───────────────────────────────────────────────────────────────
+
+@tree.command(name="percentuale", description="Calcola la percentuale di un numero")
+@app_commands.describe(
+    percentuale="La percentuale (es. 20)",
+    numero="Il numero di partenza (es. 150)"
+)
+async def percentuale_cmd(
+    interaction: discord.Interaction,
+    percentuale: float,
+    numero: float
+):
+    risultato = (percentuale / 100) * numero
+    risultato_str = f"{risultato:.2f}".rstrip("0").rstrip(".")
+
+    embed = discord.Embed(color=0x6B6B6B)
+    embed.add_field(
+        name="Percentuale",
+        value=f"`{percentuale}% of {numero} = {risultato_str}`",
+        inline=False
+    )
+    embed.set_footer(text="Discord Tools", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
 @bot.event
