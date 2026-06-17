@@ -1959,6 +1959,7 @@ async def unban(ctx, user_id: int):
 @app_commands.describe(
     giorno="Giorno (1-31)",
     mese="Mese (1-12)",
+    anno="Anno (es. 2026)",
     ora="Ora (0-23)",
     minuti="Minuti (0-59)"
 )
@@ -1966,6 +1967,7 @@ async def timestamp_cmd(
     interaction: discord.Interaction,
     giorno: int,
     mese: int,
+    anno: int,
     ora: int,
     minuti: int
 ):
@@ -1973,7 +1975,6 @@ async def timestamp_cmd(
     import zoneinfo
 
     tz = zoneinfo.ZoneInfo("Europe/Rome")
-    anno = datetime.now(zoneinfo.ZoneInfo("Europe/Rome")).year
     try:
         dt = datetime(anno, mese, giorno, ora, minuti, tzinfo=tz)
     except ValueError as e:
@@ -1986,7 +1987,7 @@ async def timestamp_cmd(
 
     embed = discord.Embed(
         title="Timestamp Generator",
-        description=f"**{date_str}**",
+        description=f"`{date_str}`",
         color=0x6B6B6B
     )
     embed.add_field(
@@ -1999,7 +2000,7 @@ async def timestamp_cmd(
         value=f"`{ts}`",
         inline=False
     )
-    embed.set_footer(text="Staff Commands", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
+    embed.set_footer(text="Discord Tools", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -2014,9 +2015,9 @@ async def timestamp_cmd(
 )
 async def release_cmd(
     interaction: discord.Interaction,
-    giorni: int = 0,
-    ore: int = 0,
-    minuti: int = 0
+    giorni: int,
+    ore: int,
+    minuti: int
 ):
     from datetime import datetime, timedelta
     import zoneinfo
@@ -2028,10 +2029,10 @@ async def release_cmd(
     date_str = release.strftime("%d/%m/%Y at %H:%M")
 
     embed = discord.Embed(color=0x6B6B6B)
-    embed.add_field(name="Release date :", value=f"`{date_str}`", inline=False)
-    embed.add_field(name="Raffle :", value=f"`<t:{ts}:f>`", inline=False)
-    embed.add_field(name="Remainder :", value=f"`{ts}`", inline=False)
-    embed.set_footer(text="Staff Commands", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
+    embed.add_field(name="Release date", value=f"`{date_str}`", inline=False)
+    embed.add_field(name="Raffle", value=f"`<t:{ts}:f>`", inline=False)
+    embed.add_field(name="Remainder", value=f"`{ts}`", inline=False)
+    embed.set_footer(text="Discord Tools", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
