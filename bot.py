@@ -350,6 +350,8 @@ async def on_ready():
     # Carica cache inviti
     for guild in bot.guilds:
         await _build_invite_cache(guild)
+    # Debug Notion properties
+    await notion_debug_properties()
     # Ricarica transcript dal Gist in memoria
     await _load_transcripts_from_gist()
     # Registra views persistenti ticket (sopravvivono ai restart)
@@ -2079,6 +2081,23 @@ NOTION_HEADERS  = {
     "Content-Type": "application/json",
     "Notion-Version": "2022-06-28",
 }
+
+async def notion_debug_properties():
+    """Stampa le proprietà del database nei log."""
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{NOTION_API_URL}/databases/{NOTION_DB_ID}",
+            headers=NOTION_HEADERS
+        ) as resp:
+            data = await resp.json()
+            if "properties" in data:
+                print("📋 Notion properties:")
+                for name, prop in data["properties"].items():
+                    print(f"  '{name}' -> {prop['type']}")
+            else:
+                print(f"⚠️ Notion debug error: {data}")
+
 
 async def notion_get_next_id() -> int:
     """Restituisce il prossimo ID progressivo."""
