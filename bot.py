@@ -1959,7 +1959,6 @@ async def unban(ctx, user_id: int):
 @app_commands.describe(
     giorno="Giorno (1-31)",
     mese="Mese (1-12)",
-    anno="Anno (es. 2026)",
     ora="Ora (0-23)",
     minuti="Minuti (0-59)"
 )
@@ -1967,7 +1966,6 @@ async def timestamp_cmd(
     interaction: discord.Interaction,
     giorno: int,
     mese: int,
-    anno: int,
     ora: int,
     minuti: int
 ):
@@ -1975,6 +1973,7 @@ async def timestamp_cmd(
     import zoneinfo
 
     tz = zoneinfo.ZoneInfo("Europe/Rome")
+    anno = datetime.now(tz).year
     try:
         dt = datetime(anno, mese, giorno, ora, minuti, tzinfo=tz)
     except ValueError as e:
@@ -2025,6 +2024,12 @@ async def release_cmd(
     tz = zoneinfo.ZoneInfo("Europe/Rome")
     now = datetime.now(tz)
     release = now + timedelta(days=giorni, hours=ore, minutes=minuti)
+    # Arrotonda i minuti al multiplo di 5 più vicino
+    rounded_minutes = round(release.minute / 5) * 5
+    if rounded_minutes == 60:
+        release = release.replace(minute=0) + timedelta(hours=1)
+    else:
+        release = release.replace(minute=rounded_minutes, second=0, microsecond=0)
     ts = int(release.timestamp())
     date_str = release.strftime("%d/%m/%Y at %H:%M")
 
@@ -2061,6 +2066,202 @@ async def percentuale_cmd(
     embed.set_footer(text="Discord Tools", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# ── Notion Integration ────────────────────────────────────────────────────────
+
+NOTION_TOKEN    = "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"
+NOTION_DB_ID    = "22f2595a87448058b766cec9d2bf6919"
+NOTION_TABLE_URL = "https://app.notion.com/p/22f2595a87448058b766cec9d2bf6919?v=22f2595a8744818bb6af000c1b13c281"
+NOTION_API_URL  = "https://api.notion.com/v1"
+NOTION_HEADERS  = {
+    "Authorization": f"Bearer {NOTION_TOKEN}",
+    "Content-Type": "application/json",
+    "Notion-Version": "2022-06-28",
+}
+
+async def notion_get_next_id() -> int:
+    """Restituisce il prossimo ID progressivo."""
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        payload = {"page_size": 100}
+        async with session.post(
+            f"{NOTION_API_URL}/databases/{NOTION_DB_ID}/query",
+            headers=NOTION_HEADERS,
+            json=payload
+        ) as resp:
+            data = await resp.json()
+            rows = data.get("results", [])
+            ids = []
+            for row in rows:
+                props = row.get("properties", {})
+                id_prop = props.get("ID", {})
+                num = id_prop.get("number")
+                if num is not None:
+                    ids.append(int(num))
+            return max(ids) + 1 if ids else 1
+
+
+async def notion_add_order(seller, buyer, model, size, sell, retail, profit, ordered) -> str | None:
+    """Aggiunge una nuova riga al database Notion e restituisce il page_id."""
+    import aiohttp
+    next_id = await notion_get_next_id()
+    payload = {
+        "parent": {"database_id": NOTION_DB_ID},
+        "properties": {
+            "ID":          {"number": next_id},
+            "ORDERED":     {"date": {"start": ordered}},
+            "SELLER":      {"rich_text": [{"text": {"content": seller}}]},
+            "BUYER":       {"rich_text": [{"text": {"content": buyer}}]},
+            "MODEL o SKU": {"title": [{"text": {"content": model}}]},
+            "SIZE":        {"rich_text": [{"text": {"content": size}}]},
+            "SELL €":      {"number": sell},
+            "RETAIL €":    {"number": retail},
+            "PROFIT €":    {"number": profit},
+            "STATUS":      {"select": {"name": "BOUGHT"}},
+            "TRACKING":    {"rich_text": [{"text": {"content": ""}}]},
+            "COURRIER":    {"rich_text": [{"text": {"content": ""}}]},
+        }
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"{NOTION_API_URL}/pages",
+            headers=NOTION_HEADERS,
+            json=payload
+        ) as resp:
+            data = await resp.json()
+            if resp.status == 200:
+                return str(next_id)
+            else:
+                print(f"⚠️ Notion error: {data}")
+                return None
+
+
+async def notion_update_tracking(row_id: int, courier: str, tracking: str) -> bool:
+    """Aggiorna COURRIER e TRACKING sulla riga con ID specificato."""
+    import aiohttp
+    # Prima trova il page_id dalla riga con quell'ID
+    async with aiohttp.ClientSession() as session:
+        payload = {
+            "filter": {
+                "property": "ID",
+                "number": {"equals": row_id}
+            }
+        }
+        async with session.post(
+            f"{NOTION_API_URL}/databases/{NOTION_DB_ID}/query",
+            headers=NOTION_HEADERS,
+            json=payload
+        ) as resp:
+            data = await resp.json()
+            results = data.get("results", [])
+            if not results:
+                return False
+            page_id = results[0]["id"]
+
+        # Aggiorna la pagina
+        update_payload = {
+            "properties": {
+                "COURRIER": {"rich_text": [{"text": {"content": courier}}]},
+                "TRACKING": {"rich_text": [{"text": {"content": tracking}}]},
+            }
+        }
+        async with session.patch(
+            f"{NOTION_API_URL}/pages/{page_id}",
+            headers=NOTION_HEADERS,
+            json=update_payload
+        ) as resp:
+            return resp.status == 200
+
+
+@tree.command(name="ordine", description="Inserisce un nuovo ordine nella tabella Notion")
+@app_commands.describe(
+    seller="Nome del venditore",
+    buyer="Nome dell'acquirente",
+    model="Model o SKU",
+    size="Taglia",
+    sell="Prezzo di vendita (€)",
+    retail="Prezzo di acquisto (€)"
+)
+async def ordine_cmd(
+    interaction: discord.Interaction,
+    seller: str,
+    buyer: str,
+    model: str,
+    size: str,
+    sell: float,
+    retail: float
+):
+    if interaction.user.id != TICKET_OWNER_ID:
+        await interaction.response.send_message("❌ Non hai i permessi.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    from datetime import datetime
+    import zoneinfo
+    tz = zoneinfo.ZoneInfo("Europe/Rome")
+    ordered = datetime.now(tz).strftime("%Y-%m-%d")
+    profit = round(sell - retail, 2)
+
+    row_id = await notion_add_order(seller, buyer, model, size, sell, retail, profit, ordered)
+
+    if row_id:
+        embed = discord.Embed(title="Order added", color=0x6B6B6B)
+        embed.add_field(name="ID",       value=f"`{row_id}`",   inline=True)
+        embed.add_field(name="Model",    value=f"`{model}`",    inline=True)
+        embed.add_field(name="Size",     value=f"`{size}`",     inline=True)
+        embed.add_field(name="Seller",   value=f"`{seller}`",   inline=True)
+        embed.add_field(name="Buyer",    value=f"`{buyer}`",    inline=True)
+        embed.add_field(name="Sell",     value=f"`{sell}€`",    inline=True)
+        embed.add_field(name="Retail",   value=f"`{retail}€`",  inline=True)
+        embed.add_field(name="Profit",   value=f"`{profit}€`",  inline=True)
+        embed.add_field(name="Ordered",  value=f"`{ordered}`",  inline=True)
+        embed.set_footer(text="Notion • Fight Kicks", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
+
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Open Table", url=NOTION_TABLE_URL, style=discord.ButtonStyle.link))
+
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        print(f"✅ Notion ordine aggiunto: {model} (ID {row_id})")
+    else:
+        await interaction.followup.send("❌ Errore durante l'inserimento su Notion.", ephemeral=True)
+
+
+@tree.command(name="tracking", description="Aggiorna corriere e tracking di un ordine")
+@app_commands.describe(
+    id="ID della riga da aggiornare",
+    courier="Nome del corriere (es. DHL, GLS, BRT)",
+    tracking="Codice tracking"
+)
+async def tracking_cmd(
+    interaction: discord.Interaction,
+    id: int,
+    courier: str,
+    tracking: str
+):
+    if interaction.user.id != TICKET_OWNER_ID:
+        await interaction.response.send_message("❌ Non hai i permessi.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    ok = await notion_update_tracking(id, courier, tracking)
+
+    if ok:
+        embed = discord.Embed(title="Tracking updated", color=0x6B6B6B)
+        embed.add_field(name="ID",       value=f"`{id}`",       inline=True)
+        embed.add_field(name="Courier",  value=f"`{courier}`",  inline=True)
+        embed.add_field(name="Tracking", value=f"`{tracking}`", inline=True)
+        embed.set_footer(text="Notion • Fight Kicks", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
+
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Open Table", url=NOTION_TABLE_URL, style=discord.ButtonStyle.link))
+
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        print(f"✅ Notion tracking aggiornato: riga {id}")
+    else:
+        await interaction.followup.send(f"❌ Riga con ID `{id}` non trovata.", ephemeral=True)
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
