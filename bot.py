@@ -2070,7 +2070,7 @@ async def percentuale_cmd(
 
 # ── Notion Integration ────────────────────────────────────────────────────────
 
-NOTION_TOKEN    = "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"
+NOTION_TOKEN    = os.environ.get("NOTION_TOKEN", "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")
 NOTION_DB_ID    = "22f2595a87448058b766cec9d2bf6919"
 NOTION_TABLE_URL = "https://app.notion.com/p/22f2595a87448058b766cec9d2bf6919?v=22f2595a8744818bb6af000c1b13c281"
 NOTION_API_URL  = "https://api.notion.com/v1"
@@ -2109,18 +2109,16 @@ async def notion_add_order(seller, buyer, model, size, sell, retail, profit, ord
     payload = {
         "parent": {"database_id": NOTION_DB_ID},
         "properties": {
-            "ID":          {"number": next_id},
-            "ORDERED":     {"date": {"start": ordered}},
-            "SELLER":      {"rich_text": [{"text": {"content": seller}}]},
-            "BUYER":       {"rich_text": [{"text": {"content": buyer}}]},
-            "MODEL o SKU": {"title": [{"text": {"content": model}}]},
-            "SIZE":        {"rich_text": [{"text": {"content": size}}]},
-            "SELL €":      {"number": sell},
-            "RETAIL €":    {"number": retail},
-            "PROFIT €":    {"number": profit},
-            "STATUS":      {"select": {"name": "BOUGHT"}},
-            "TRACKING":    {"rich_text": [{"text": {"content": ""}}]},
-            "COURRIER":    {"rich_text": [{"text": {"content": ""}}]},
+            "ID":       {"number": next_id},
+            "ORDERED":  {"date": {"start": ordered}},
+            "SELLER":   {"rich_text": [{"text": {"content": seller}}]},
+            "BUYER":    {"rich_text": [{"text": {"content": buyer}}]},
+            "SKU":      {"title": [{"text": {"content": model}}]},
+            "SIZE":     {"rich_text": [{"text": {"content": size}}]},
+            "SELL":     {"number": sell},
+            "RETAIL":   {"number": retail},
+            "PROFIT":   {"number": profit},
+            "STATUS":   {"select": {"name": "BOUGHT"}},
         }
     }
     async with aiohttp.ClientSession() as session:
@@ -2162,7 +2160,7 @@ async def notion_update_tracking(row_id: int, courier: str, tracking: str) -> bo
         # Aggiorna la pagina
         update_payload = {
             "properties": {
-                "COURRIER": {"rich_text": [{"text": {"content": courier}}]},
+                "COURIER":  {"rich_text": [{"text": {"content": courier}}]},
                 "TRACKING": {"rich_text": [{"text": {"content": tracking}}]},
             }
         }
@@ -2174,7 +2172,7 @@ async def notion_update_tracking(row_id: int, courier: str, tracking: str) -> bo
             return resp.status == 200
 
 
-@tree.command(name="ordine", description="Inserisce un nuovo ordine nella tabella Notion")
+@tree.command(name="notion", description="Inserisce un nuovo ordine nella tabella Notion")
 @app_commands.describe(
     seller="Nome del venditore",
     buyer="Nome dell'acquirente",
@@ -2183,7 +2181,7 @@ async def notion_update_tracking(row_id: int, courier: str, tracking: str) -> bo
     sell="Prezzo di vendita (€)",
     retail="Prezzo di acquisto (€)"
 )
-async def ordine_cmd(
+async def notion_cmd(
     interaction: discord.Interaction,
     seller: str,
     buyer: str,
