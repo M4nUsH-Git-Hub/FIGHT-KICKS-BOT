@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 
 # ── Configurazione persistente via GitHub Gist ────────────────────────────────
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-GITHUB_TOKEN = "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"
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "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")
 GITHUB_GIST_ID = "6cda801fb93b5515a36bfab543a5d0e1"
 TRANSCRIPT_GIST_ID = "6ca31faba6736a24f456685d0408335a"
 
@@ -350,8 +350,6 @@ async def on_ready():
     # Carica cache inviti
     for guild in bot.guilds:
         await _build_invite_cache(guild)
-    # Debug Notion properties
-    await notion_debug_properties()
     # Ricarica transcript dal Gist in memoria
     await _load_transcripts_from_gist()
     # Registra views persistenti ticket (sopravvivono ai restart)
@@ -1880,14 +1878,7 @@ async def on_invite_delete(invite: discord.Invite):
 AUTO_ROLE_ID = 1416724423607713883
 
 @bot.event
-async def on_member_join_autorole(member: discord.Member):
-    role = member.guild.get_role(AUTO_ROLE_ID)
-    if role:
-        try:
-            await member.add_roles(role)
-            print(f"✅ Ruolo assegnato: {role.name} → {member}")
-        except Exception as e:
-            print(f"⚠️ Errore assegnazione ruolo: {e}")
+
 
 
 # ── Purge ─────────────────────────────────────────────────────────────────────
@@ -2083,23 +2074,6 @@ NOTION_HEADERS  = {
     "Content-Type": "application/json",
     "Notion-Version": "2022-06-28",
 }
-
-async def notion_debug_properties():
-    """Stampa le proprietà del database nei log."""
-    import aiohttp
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"{NOTION_API_URL}/databases/{NOTION_DB_ID}",
-            headers=NOTION_HEADERS
-        ) as resp:
-            data = await resp.json()
-            if "properties" in data:
-                print("📋 Notion properties:")
-                for name, prop in data["properties"].items():
-                    print(f"  '{name}' -> {prop['type']}")
-            else:
-                print(f"⚠️ Notion debug error: {data}")
-
 
 async def notion_get_next_id() -> int:
     """Restituisce il prossimo ID progressivo."""
