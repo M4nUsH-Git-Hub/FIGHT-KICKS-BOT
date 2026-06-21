@@ -23,7 +23,9 @@ from datetime import datetime, timezone
 
 # ── Configurazione persistente via GitHub Gist ────────────────────────────────
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "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")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+if not GITHUB_TOKEN:
+    raise RuntimeError("Variabile d'ambiente GITHUB_TOKEN non impostata.")
 GITHUB_GIST_ID = "6cda801fb93b5515a36bfab543a5d0e1"
 TRANSCRIPT_GIST_ID = "6ca31faba6736a24f456685d0408335a"
 
@@ -1876,9 +1878,6 @@ async def on_invite_delete(invite: discord.Invite):
 # ── Auto Role ─────────────────────────────────────────────────────────────────
 
 AUTO_ROLE_ID = 1416724423607713883
-
-@bot.event
-
 
 
 # ── Purge ─────────────────────────────────────────────────────────────────────
