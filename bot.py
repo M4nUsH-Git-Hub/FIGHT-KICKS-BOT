@@ -572,8 +572,10 @@ async def on_message(message: discord.Message):
                     return
 
     # ── Ping backup check ──
+    EXCLUDED_CATEGORY_ID = 1416335186517561406
     backup_channel_id = guild_cfg.get("backup_channel_id")
-    if backup_channel_id and has_ping(message):
+    channel_category_id = message.channel.category_id if message.channel.category_id else None
+    if backup_channel_id and has_ping(message) and channel_category_id != EXCLUDED_CATEGORY_ID:
         open_channel_ids = guild_cfg.get("open_channel_ids", [])
         if message.channel.id in open_channel_ids or is_authorized(message, guild_cfg):
             backup_channel = message.guild.get_channel(backup_channel_id)
