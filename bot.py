@@ -23,9 +23,7 @@ from datetime import datetime, timezone
 
 # ── Configurazione persistente via GitHub Gist ────────────────────────────────
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
-if not GITHUB_TOKEN:
-    raise RuntimeError("Variabile d'ambiente GITHUB_TOKEN non impostata.")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "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")
 GITHUB_GIST_ID = "6cda801fb93b5515a36bfab543a5d0e1"
 TRANSCRIPT_GIST_ID = "6ca31faba6736a24f456685d0408335a"
 
@@ -663,7 +661,70 @@ WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il l
 
 
 
+KICKSDB_API_KEY = "KICKS-A300-700C-981A-AE30A0839709"
+RAPIDAPI_KEY = "7291b27ce9mshb8403cf0bbcfa49p1302afjsn4ea8c08075fe"
 
+async def fetch_sneaker_image(nome: str, codice: str) -> str | None:
+    """
+    Cerca immagine tramite Sneaker Database StockX su RapidAPI.
+    Cerca prima per SKU (styleId), poi per nome.
+    """
+    import aiohttp
+    import urllib.parse
+
+    headers = {
+        "x-rapidapi-key": RAPIDAPI_KEY,
+        "x-rapidapi-host": "sneaker-database-stockx.p.rapidapi.com",
+        "Content-Type": "application/json",
+    }
+
+    async with aiohttp.ClientSession() as session:
+
+        # ── Tentativo 1: cerca per SKU ──
+        try:
+            url = f"https://sneaker-database-stockx.p.rapidapi.com/productprice?styleId={urllib.parse.quote(codice)}"
+            print(f"  🔎 RapidAPI SKU: {codice}")
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                print(f"  📡 Status: {resp.status}")
+                if resp.status == 200:
+                    data = await resp.json()
+                    img = data.get("image") or data.get("thumbnail")
+                    if img:
+                        print(f"✅ Immagine SKU trovata: {img[:80]}")
+                        return img
+                else:
+                    body = await resp.text()
+                    print(f"  ❌ Error: {body[:200]}")
+        except Exception as e:
+            print(f"⚠️ RapidAPI SKU fallito: {e}")
+
+        # ── Tentativo 2: Simple Search per nome ──
+        try:
+            url = f"https://sneaker-database-stockx.p.rapidapi.com/searchproduct?query={urllib.parse.quote(nome)}"
+            print(f"  🔎 RapidAPI nome: {nome}")
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                print(f"  📡 Status: {resp.status}")
+                if resp.status == 200:
+                    data = await resp.json()
+                    # Può essere lista o dict
+                    if isinstance(data, list) and data:
+                        img = data[0].get("image") or data[0].get("thumbnail")
+                    elif isinstance(data, dict):
+                        results = data.get("results", data.get("products", [data]))
+                        img = results[0].get("image") or results[0].get("thumbnail") if results else None
+                    else:
+                        img = None
+                    if img:
+                        print(f"✅ Immagine nome trovata: {img[:80]}")
+                        return img
+                else:
+                    body = await resp.text()
+                    print(f"  ❌ Error: {body[:200]}")
+        except Exception as e:
+            print(f"⚠️ RapidAPI nome fallito: {e}")
+
+    print("❌ Nessuna immagine trovata")
+    return None
 
 @tree.command(name="wtb", description="Posta un annuncio WTB nel canale wtb-monitor")
 @app_commands.describe(
@@ -1097,6 +1158,7 @@ giveaway_group = GiveawayGroup()
     winners="Number of winners (default: 1)",
     hosted_by="Optional: override host with a partner tag or link",
     rules="Optional: giveaway rules shown in the embed",
+    mention_role="Optional: role to mention when sending the giveaway",
 )
 async def giveaway_start(
     interaction: discord.Interaction,
@@ -1105,6 +1167,7 @@ async def giveaway_start(
     winners: app_commands.Range[int, 1, 20] = 1,
     hosted_by: str = None,
     rules: str = None,
+    mention_role: discord.Role = None,
 ):
     if not (
         interaction.user.id == interaction.guild.owner_id
@@ -1137,7 +1200,8 @@ async def giveaway_start(
     )
 
     await interaction.response.send_message("✅ Giveaway started!", ephemeral=True)
-    giveaway_msg = await target_channel.send(embed=embed)
+    role_mention = mention_role.mention if mention_role else None
+    giveaway_msg = await target_channel.send(content=role_mention, embed=embed)
     await giveaway_msg.add_reaction(GIVEAWAY_EMOJI)
 
     giveaways = get_giveaways()
@@ -1816,6 +1880,9 @@ async def on_invite_delete(invite: discord.Invite):
 
 AUTO_ROLE_ID = 1416724423607713883
 
+@bot.event
+
+
 
 # ── Purge ─────────────────────────────────────────────────────────────────────
 
@@ -2001,9 +2068,7 @@ async def percentuale_cmd(
 
 # ── Notion Integration ────────────────────────────────────────────────────────
 
-NOTION_TOKEN    = os.environ.get("NOTION_TOKEN")
-if not NOTION_TOKEN:
-    raise RuntimeError("Variabile d'ambiente NOTION_TOKEN non impostata.")
+NOTION_TOKEN    = os.environ.get("NOTION_TOKEN", "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")
 NOTION_DB_ID    = "22f2595a87448058b766cec9d2bf6919"
 NOTION_TABLE_URL = "https://app.notion.com/p/22f2595a87448058b766cec9d2bf6919?v=22f2595a8744818bb6af000c1b13c281"
 NOTION_API_URL  = "https://api.notion.com/v1"
@@ -2204,9 +2269,16 @@ async def on_disconnect():
 
 if __name__ == "__main__":
     import time
+    import subprocess
     token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
         raise RuntimeError("Variabile d'ambiente DISCORD_BOT_TOKEN non impostata.")
+
+    # Playwright serve per il comando /wtb
+    print("🔧 Installazione Chromium...")
+    subprocess.run(["python", "-m", "playwright", "install", "chromium"], check=False)
+    subprocess.run(["python", "-m", "playwright", "install-deps", "chromium"], check=False)
+    print("✅ Chromium pronto")
 
     async def main():
         while True:
