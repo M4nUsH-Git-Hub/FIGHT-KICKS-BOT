@@ -357,6 +357,12 @@ async def on_ready():
     bot.add_view(CreateDealTicketView())
     bot.add_view(TicketControlView("support"))
     bot.add_view(TicketControlView("deal"))
+    # Registra views persistenti giveaway (un bottone per ogni giveaway attivo)
+    for gid, g in get_giveaways().items():
+        try:
+            bot.add_view(GiveawayView(g["message_id"]))
+        except Exception:
+            pass
     # Avvia web server transcript
     await start_web_server()
 
@@ -956,7 +962,6 @@ tree.add_command(webhook_group)
 
 # ── Sistema Giveaway ──────────────────────────────────────────────────────────
 
-GIVEAWAY_EMOJI  = "🎉"
 GIVEAWAY_COLOR  = discord.Color(0x575553)
 GIVEAWAY_FOOTER = "Giveaway"
 GIVEAWAY_ICON   = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
@@ -1046,16 +1051,65 @@ def build_giveaway_embed(
     return embed
 
 
-async def count_entries(message: discord.Message) -> int:
-    """Conta le reaction 🎉 escludendo i bot."""
-    for reaction in message.reactions:
-        if str(reaction.emoji) == GIVEAWAY_EMOJI:
-            count = 0
-            async for user in reaction.users():
-                if not user.bot:
-                    count += 1
-            return count
-    return 0
+def count_entries(giveaway: dict) -> int:
+    """Conta i partecipanti tramite la lista salvata (entrata via bottone)."""
+    return len(giveaway.get("participant_ids", []))
+
+
+class GiveawayView(discord.ui.View):
+    """Bottone 'Enter Giveaway' — persistente, custom_id legato al message_id."""
+
+    def __init__(self, message_id: int):
+        super().__init__(timeout=None)
+        self.message_id = message_id
+        self.enter_button.custom_id = f"giveaway_enter:{message_id}"
+        self._refresh_label()
+
+    def _refresh_label(self):
+        giveaways = get_giveaways()
+        g = giveaways.get(str(self.message_id))
+        count = len(g.get("participant_ids", [])) if g else 0
+        self.enter_button.label = f"🎉 Enter Giveaway ({count})"
+
+    @discord.ui.button(label="🎉 Enter Giveaway (0)", style=discord.ButtonStyle.primary)
+    async def enter_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        giveaways = get_giveaways()
+        gid = str(self.message_id)
+        g = giveaways.get(gid)
+
+        if g is None:
+            await interaction.response.send_message(
+                "❌ This giveaway is no longer active.", ephemeral=True
+            )
+            return
+
+        if g["end_ts"] <= datetime.now(timezone.utc).timestamp():
+            await interaction.response.send_message(
+                "❌ This giveaway has already ended.", ephemeral=True
+            )
+            return
+
+        participants = g.setdefault("participant_ids", [])
+        user_id = interaction.user.id
+
+        if user_id in participants:
+            participants.remove(user_id)
+            save_giveaways(giveaways)
+            await interaction.response.send_message(
+                "↩️ You left the giveaway.", ephemeral=True
+            )
+        else:
+            participants.append(user_id)
+            save_giveaways(giveaways)
+            await interaction.response.send_message(
+                "✅ You're in! Good luck.", ephemeral=True
+            )
+
+        self._refresh_label()
+        try:
+            await interaction.message.edit(view=self)
+        except discord.HTTPException:
+            pass
 
 
 async def conclude_giveaway(giveaway_id: str, giveaway: dict):
@@ -1068,12 +1122,7 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
     except discord.NotFound:
         return
 
-    participants = []
-    for reaction in message.reactions:
-        if str(reaction.emoji) == GIVEAWAY_EMOJI:
-            async for user in reaction.users():
-                if not user.bot:
-                    participants.append(user.id)
+    participants = giveaway.get("participant_ids", [])
 
     winners_count = giveaway["winners_count"]
     winner_ids = random.sample(participants, min(winners_count, len(participants))) if participants else []
@@ -1090,7 +1139,7 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
         image=giveaway.get("image"),
         thumbnail=giveaway.get("thumbnail"),
     )
-    await message.edit(embed=ended_embed)
+    await message.edit(embed=ended_embed, view=None)
 
     if winner_ids:
         mentions = " - ".join(f"<@{wid}>" for wid in winner_ids)
@@ -1116,7 +1165,7 @@ def migrate_giveaway(g: dict) -> dict:
 
 @tasks.loop(seconds=30)
 async def giveaway_check():
-    """Ogni 30s: chiude i giveaway scaduti e aggiorna le entries di quelli attivi."""
+    """Ogni 30s: chiude i giveaway scaduti. Le entries si aggiornano in tempo reale al click del bottone."""
     now = datetime.now(timezone.utc).timestamp()
     giveaways = get_giveaways()
 
@@ -1126,35 +1175,15 @@ async def giveaway_check():
         if "host" not in g:
             migrate_giveaway(g)
             changed = True
+        if "participant_ids" not in g:
+            g["participant_ids"] = []
+            changed = True
     if changed:
         save_giveaways(giveaways)
 
     expired = [gid for gid, g in giveaways.items() if g["end_ts"] <= now]
     for gid in expired:
         await conclude_giveaway(gid, giveaways[gid])
-
-    # Aggiorna entries embed per i giveaway ancora attivi
-    active = {gid: g for gid, g in giveaways.items() if g["end_ts"] > now}
-    for gid, g in active.items():
-        channel = bot.get_channel(g["channel_id"])
-        if channel is None:
-            continue
-        try:
-            message = await channel.fetch_message(g["message_id"])
-        except discord.NotFound:
-            continue
-        entries = await count_entries(message)
-        updated_embed = build_giveaway_embed(
-            prize=g["prize"],
-            end_ts=g["end_ts"],
-            winners_count=g["winners_count"],
-            host=g.get("host"),
-            entries=entries,
-            rules=g.get("rules"),
-            image=g.get("image"),
-            thumbnail=g.get("thumbnail"),
-        )
-        await message.edit(embed=updated_embed)
 
 
 @tree.command(name="giveaway", description="Start a new giveaway")
@@ -1260,7 +1289,9 @@ async def giveaway_start(
         mention_content = None
 
     giveaway_msg = await target_channel.send(content=mention_content, embed=embed)
-    await giveaway_msg.add_reaction(GIVEAWAY_EMOJI)
+
+    view = GiveawayView(giveaway_msg.id)
+    await giveaway_msg.edit(view=view)
 
     giveaways = get_giveaways()
     giveaways[str(giveaway_msg.id)] = {
@@ -1274,6 +1305,7 @@ async def giveaway_start(
         "rules": rules,
         "image": image,
         "thumbnail": thumbnail,
+        "participant_ids": [],
     }
     save_giveaways(giveaways)
 
