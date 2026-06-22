@@ -1158,8 +1158,14 @@ giveaway_group = GiveawayGroup()
     winners="Number of winners (default: 1)",
     hosted_by="Optional: override host with a partner tag or link",
     rules="Optional: giveaway rules shown in the embed",
-    mention_role="Optional: role to mention when sending the giveaway",
+    mention_type="Optional: who to mention (@everyone, @here, or a specific role)",
+    mention_role="Optional: specific role to mention (only if mention_type is 'role')",
 )
+@app_commands.choices(mention_type=[
+    app_commands.Choice(name="@everyone", value="everyone"),
+    app_commands.Choice(name="@here", value="here"),
+    app_commands.Choice(name="Specific role", value="role"),
+])
 async def giveaway_start(
     interaction: discord.Interaction,
     prize: str,
@@ -1167,6 +1173,7 @@ async def giveaway_start(
     winners: app_commands.Range[int, 1, 20] = 1,
     hosted_by: str = None,
     rules: str = None,
+    mention_type: str = None,
     mention_role: discord.Role = None,
 ):
     if not (
@@ -1200,8 +1207,17 @@ async def giveaway_start(
     )
 
     await interaction.response.send_message("✅ Giveaway started!", ephemeral=True)
-    role_mention = mention_role.mention if mention_role else None
-    giveaway_msg = await target_channel.send(content=role_mention, embed=embed)
+
+    if mention_type == "everyone":
+        mention_content = "@everyone"
+    elif mention_type == "here":
+        mention_content = "@here"
+    elif mention_type == "role" and mention_role:
+        mention_content = mention_role.mention
+    else:
+        mention_content = None
+
+    giveaway_msg = await target_channel.send(content=mention_content, embed=embed)
     await giveaway_msg.add_reaction(GIVEAWAY_EMOJI)
 
     giveaways = get_giveaways()
