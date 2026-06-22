@@ -1161,6 +1161,8 @@ giveaway_group = GiveawayGroup()
     mention_type="Optional: who to mention (@everyone, @here, or a specific role)",
     mention_role="Optional: specific role to mention (only if mention_type is 'role')",
     start_time="Optional: schedule the giveaway (e.g. 10:00) — uses Europe/Rome timezone",
+    image="Optional: large banner image URL shown at the bottom of the embed",
+    thumbnail="Optional: small image URL shown in the top right of the embed",
 )
 @app_commands.choices(mention_type=[
     app_commands.Choice(name="@everyone", value="everyone"),
@@ -1177,6 +1179,8 @@ async def giveaway_start(
     mention_type: str = None,
     mention_role: discord.Role = None,
     start_time: str = None,
+    image: str = None,
+    thumbnail: str = None,
 ):
     if not (
         interaction.user.id == interaction.guild.owner_id
@@ -1228,6 +1232,10 @@ async def giveaway_start(
         entries=0,
         rules=rules,
     )
+    if image:
+        embed.set_image(url=image)
+    if thumbnail:
+        embed.set_thumbnail(url=thumbnail)
 
     if delay_seconds > 0:
         import math
