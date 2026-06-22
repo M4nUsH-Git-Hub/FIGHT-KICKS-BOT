@@ -994,10 +994,14 @@ def build_giveaway_embed(
     ended: bool = False,
     winner_ids: list[int] | None = None,
     rules: str | None = None,
+    image: str | None = None,
+    thumbnail: str | None = None,
 ) -> discord.Embed:
     """
     host: stringa libera opzionale — mention, testo o link. Se None, il campo non appare.
     rules: testo opzionale mostrato nel campo Rules dell'embed attivo.
+    image: URL banner grande mostrato in basso nell'embed (persiste tra gli aggiornamenti).
+    thumbnail: URL immagine piccola mostrata in alto a destra (persiste tra gli aggiornamenti).
     """
     discord_ts = f"<t:{int(end_ts)}:f>"
 
@@ -1033,6 +1037,12 @@ def build_giveaway_embed(
 
     embed.set_footer(text=GIVEAWAY_FOOTER, icon_url=GIVEAWAY_ICON)
     embed.timestamp = datetime.now(timezone.utc)
+
+    if image:
+        embed.set_image(url=image)
+    if thumbnail:
+        embed.set_thumbnail(url=thumbnail)
+
     return embed
 
 
@@ -1077,6 +1087,8 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
         entries=entries,
         ended=True,
         winner_ids=winner_ids,
+        image=giveaway.get("image"),
+        thumbnail=giveaway.get("thumbnail"),
     )
     await message.edit(embed=ended_embed)
 
@@ -1139,19 +1151,13 @@ async def giveaway_check():
             host=g.get("host"),
             entries=entries,
             rules=g.get("rules"),
+            image=g.get("image"),
+            thumbnail=g.get("thumbnail"),
         )
         await message.edit(embed=updated_embed)
 
 
-class GiveawayGroup(app_commands.Group):
-    def __init__(self):
-        super().__init__(name="giveaway", description="Giveaway management")
-
-
-giveaway_group = GiveawayGroup()
-
-
-@giveaway_group.command(name="start", description="Start a new giveaway")
+@tree.command(name="giveaway", description="Start a new giveaway")
 @app_commands.describe(
     prize="What's being given away (e.g. '2GB Flaming Proxies')",
     duration="Giveaway duration (e.g. 1d, 12h, 30m)",
@@ -1231,18 +1237,13 @@ async def giveaway_start(
         host=host,
         entries=0,
         rules=rules,
+        image=image,
+        thumbnail=thumbnail,
     )
-    if image:
-        embed.set_image(url=image)
-    if thumbnail:
-        embed.set_thumbnail(url=thumbnail)
 
     if delay_seconds > 0:
-        import math
-        h = int(delay_seconds // 3600)
-        m = int((delay_seconds % 3600) // 60)
         await interaction.response.send_message(
-            f"✅ Giveaway scheduled for **{start_time}** (Europe/Rome) — starts in {h}h {m}m",
+            f"✅ Giveaway scheduled for **{start_time}**",
             ephemeral=True
         )
         await asyncio.sleep(delay_seconds)
@@ -1271,12 +1272,10 @@ async def giveaway_start(
         "winners_count": winners,
         "host": host,
         "rules": rules,
+        "image": image,
+        "thumbnail": thumbnail,
     }
     save_giveaways(giveaways)
-
-
-
-tree.add_command(giveaway_group)
 
 
 
