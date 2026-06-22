@@ -1063,15 +1063,8 @@ class GiveawayView(discord.ui.View):
         super().__init__(timeout=None)
         self.message_id = message_id
         self.enter_button.custom_id = f"giveaway_enter:{message_id}"
-        self._refresh_label()
 
-    def _refresh_label(self):
-        giveaways = get_giveaways()
-        g = giveaways.get(str(self.message_id))
-        count = len(g.get("participant_ids", [])) if g else 0
-        self.enter_button.label = f"🎉 Enter Giveaway ({count})"
-
-    @discord.ui.button(label="🎉 Enter Giveaway (0)", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="🎉 Enter Giveaway", style=discord.ButtonStyle.primary)
     async def enter_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         giveaways = get_giveaways()
         gid = str(self.message_id)
@@ -1096,20 +1089,14 @@ class GiveawayView(discord.ui.View):
             participants.remove(user_id)
             save_giveaways(giveaways)
             await interaction.response.send_message(
-                "↩️ You left the giveaway.", ephemeral=True
+                "↩️ You left the giveaway", ephemeral=True
             )
         else:
             participants.append(user_id)
             save_giveaways(giveaways)
             await interaction.response.send_message(
-                "✅ You're in! Good luck.", ephemeral=True
+                "✅ You're in, good luck!", ephemeral=True
             )
-
-        self._refresh_label()
-        try:
-            await interaction.message.edit(view=self)
-        except discord.HTTPException:
-            pass
 
 
 async def conclude_giveaway(giveaway_id: str, giveaway: dict):
@@ -1187,18 +1174,6 @@ async def giveaway_check():
 
 
 @tree.command(name="giveaway", description="Start a new giveaway")
-@app_commands.describe(
-    prize="What's being given away (e.g. '2GB Flaming Proxies')",
-    duration="Giveaway duration (e.g. 1d, 12h, 30m)",
-    winners="Number of winners (default: 1)",
-    hosted_by="Optional: override host — mention a user or type a custom text",
-    rules="Optional: giveaway rules shown in the embed",
-    mention_type="Optional: who to mention (@everyone, @here, or a specific role)",
-    mention_role="Optional: specific role to mention (only if mention_type is 'role')",
-    start_time="Optional: schedule the giveaway (e.g. 10:00) — uses Europe/Rome timezone",
-    image="Optional: large banner image URL shown at the bottom of the embed",
-    thumbnail="Optional: small image URL shown in the top right of the embed",
-)
 @app_commands.choices(mention_type=[
     app_commands.Choice(name="@everyone", value="everyone"),
     app_commands.Choice(name="@here", value="here"),
