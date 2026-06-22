@@ -576,7 +576,7 @@ async def on_message(message: discord.Message):
         EXCLUDED_CATEGORY_ID = 1416335186517561406
         backup_channel_id = guild_cfg.get("backup_channel_id")
         channel_category_id = message.channel.category_id if message.channel.category_id else None
-        if backup_channel_id and has_ping(message) and channel_category_id != EXCLUDED_CATEGORY_ID:
+        if backup_channel_id and message.channel.id != backup_channel_id and has_ping(message) and channel_category_id != EXCLUDED_CATEGORY_ID:
             backup_channel = message.guild.get_channel(backup_channel_id)
             if backup_channel:
                 embed = build_embed(message)
