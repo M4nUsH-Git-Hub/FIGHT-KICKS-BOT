@@ -1160,6 +1160,7 @@ giveaway_group = GiveawayGroup()
     rules="Optional: giveaway rules shown in the embed",
     mention_type="Optional: who to mention (@everyone, @here, or a specific role)",
     mention_role="Optional: specific role to mention (only if mention_type is 'role')",
+    start_time="Optional: schedule the giveaway (e.g. 10:00) — uses Europe/Rome timezone",
 )
 @app_commands.choices(mention_type=[
     app_commands.Choice(name="@everyone", value="everyone"),
@@ -1175,6 +1176,7 @@ async def giveaway_start(
     rules: str = None,
     mention_type: str = None,
     mention_role: discord.Role = None,
+    start_time: str = None,
 ):
     if not (
         interaction.user.id == interaction.guild.owner_id
@@ -1193,8 +1195,29 @@ async def giveaway_start(
         )
         return
 
+    # Gestione start_time schedulato
+    import zoneinfo as _zi
+    _tz = _zi.ZoneInfo("Europe/Rome")
+    delay_seconds = 0
+    if start_time:
+        import re as _re
+        match = _re.match(r"^(\d{1,2}):(\d{2})$", start_time.strip())
+        if not match:
+            await interaction.response.send_message(
+                "❌ Invalid time format. Use `HH:MM` (e.g. `10:00`).",
+                ephemeral=True,
+            )
+            return
+        h, m = int(match.group(1)), int(match.group(2))
+        from datetime import datetime as _dt
+        now_local = _dt.now(_tz)
+        target_local = now_local.replace(hour=h, minute=m, second=0, microsecond=0)
+        if target_local <= now_local:
+            target_local = target_local + timedelta(days=1)
+        delay_seconds = (target_local - now_local).total_seconds()
+
     target_channel = interaction.channel
-    end_ts = datetime.now(timezone.utc).timestamp() + seconds
+    end_ts = datetime.now(timezone.utc).timestamp() + delay_seconds + seconds
     host = hosted_by if hosted_by else None
 
     embed = build_giveaway_embed(
@@ -1206,7 +1229,17 @@ async def giveaway_start(
         rules=rules,
     )
 
-    await interaction.response.send_message("✅ Giveaway started!", ephemeral=True)
+    if delay_seconds > 0:
+        import math
+        h = int(delay_seconds // 3600)
+        m = int((delay_seconds % 3600) // 60)
+        await interaction.response.send_message(
+            f"✅ Giveaway scheduled for **{start_time}** (Europe/Rome) — starts in {h}h {m}m",
+            ephemeral=True
+        )
+        await asyncio.sleep(delay_seconds)
+    else:
+        await interaction.response.send_message("✅ Giveaway started!", ephemeral=True)
 
     if mention_type == "everyone":
         mention_content = "@everyone"
