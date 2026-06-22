@@ -1880,9 +1880,6 @@ async def on_invite_delete(invite: discord.Invite):
 
 AUTO_ROLE_ID = 1416724423607713883
 
-@bot.event
-
-
 
 # ── Purge ─────────────────────────────────────────────────────────────────────
 
