@@ -568,7 +568,22 @@ Repeated violations will result in disciplinary action!
 
 @bot.event
 async def on_message(message: discord.Message):
-    if message.author.id == bot.user.id:
+    is_self = message.author.id == bot.user.id
+    if is_self:
+        # I messaggi del bot stesso saltano anti-link e comandi,
+        # ma vengono comunque controllati dal ping backup qui sotto.
+        guild_cfg = get_guild_config(message.guild.id) if message.guild else {}
+        EXCLUDED_CATEGORY_ID = 1416335186517561406
+        backup_channel_id = guild_cfg.get("backup_channel_id")
+        channel_category_id = message.channel.category_id if message.channel.category_id else None
+        if backup_channel_id and has_ping(message) and channel_category_id != EXCLUDED_CATEGORY_ID:
+            backup_channel = message.guild.get_channel(backup_channel_id)
+            if backup_channel:
+                embed = build_embed(message)
+                try:
+                    await backup_channel.send(embed=embed)
+                except (discord.Forbidden, discord.HTTPException) as e:
+                    print(f"⚠️ Errore invio embed: {e}")
         return
     if message.guild is None:
         return
@@ -1139,22 +1154,18 @@ async def giveaway_check():
         await conclude_giveaway(gid, giveaways[gid])
 
 
+DEFAULT_GIVEAWAY_ROLE_ID = 1427395632368189521
+
 @tree.command(name="giveaway", description="Start a new giveaway")
-@app_commands.choices(mention_type=[
-    app_commands.Choice(name="@everyone", value="everyone"),
-    app_commands.Choice(name="@here", value="here"),
-    app_commands.Choice(name="Specific role", value="role"),
-])
 async def giveaway_start(
     interaction: discord.Interaction,
     prize: str,
     duration: str,
     winners: app_commands.Range[int, 1, 20] = 1,
-    hosted_by: discord.Member = None,
+    hosted: discord.Member = None,
     rules: str = None,
-    mention_type: str = None,
-    mention_role: discord.Role = None,
-    start_time: str = None,
+    mention: discord.Role = None,
+    start: str = None,
     image: str = None,
     thumbnail: str = None,
 ):
@@ -1179,9 +1190,9 @@ async def giveaway_start(
     import zoneinfo as _zi
     _tz = _zi.ZoneInfo("Europe/Rome")
     delay_seconds = 0
-    if start_time:
+    if start:
         import re as _re
-        match = _re.match(r"^(\d{1,2}):(\d{2})$", start_time.strip())
+        match = _re.match(r"^(\d{1,2}):(\d{2})$", start.strip())
         if not match:
             await interaction.response.send_message(
                 "❌ Invalid time format. Use `HH:MM` (e.g. `10:00`).",
@@ -1198,7 +1209,7 @@ async def giveaway_start(
 
     target_channel = interaction.channel
     end_ts = datetime.now(timezone.utc).timestamp() + delay_seconds + seconds
-    host = hosted_by.mention if hosted_by else None
+    host = hosted.mention if hosted else None
 
     embed = build_giveaway_embed(
         prize=prize,
@@ -1213,21 +1224,15 @@ async def giveaway_start(
 
     if delay_seconds > 0:
         await interaction.response.send_message(
-            f"✅ Giveaway scheduled for **{start_time}**",
+            f"✅ Giveaway scheduled for **{start}**",
             ephemeral=True
         )
         await asyncio.sleep(delay_seconds)
     else:
         await interaction.response.send_message("✅ Giveaway started!", ephemeral=True)
 
-    if mention_type == "everyone":
-        mention_content = "@everyone"
-    elif mention_type == "here":
-        mention_content = "@here"
-    elif mention_type == "role" and mention_role:
-        mention_content = mention_role.mention
-    else:
-        mention_content = None
+    role_to_mention = mention or interaction.guild.get_role(DEFAULT_GIVEAWAY_ROLE_ID)
+    mention_content = role_to_mention.mention if role_to_mention else None
 
     giveaway_msg = await target_channel.send(content=mention_content, embed=embed)
 
