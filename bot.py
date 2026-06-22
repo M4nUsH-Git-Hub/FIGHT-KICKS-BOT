@@ -1156,7 +1156,7 @@ giveaway_group = GiveawayGroup()
     prize="What's being given away (e.g. '2GB Flaming Proxies')",
     duration="Giveaway duration (e.g. 1d, 12h, 30m)",
     winners="Number of winners (default: 1)",
-    hosted_by="Optional: override host with a partner tag or link",
+    hosted_by="Optional: override host — mention a user or type a custom text",
     rules="Optional: giveaway rules shown in the embed",
     mention_type="Optional: who to mention (@everyone, @here, or a specific role)",
     mention_role="Optional: specific role to mention (only if mention_type is 'role')",
@@ -1172,7 +1172,7 @@ async def giveaway_start(
     prize: str,
     duration: str,
     winners: app_commands.Range[int, 1, 20] = 1,
-    hosted_by: str = None,
+    hosted_by: discord.Member = None,
     rules: str = None,
     mention_type: str = None,
     mention_role: discord.Role = None,
@@ -1218,7 +1218,7 @@ async def giveaway_start(
 
     target_channel = interaction.channel
     end_ts = datetime.now(timezone.utc).timestamp() + delay_seconds + seconds
-    host = hosted_by if hosted_by else None
+    host = hosted_by.mention if hosted_by else None
 
     embed = build_giveaway_embed(
         prize=prize,
