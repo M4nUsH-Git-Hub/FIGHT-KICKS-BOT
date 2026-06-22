@@ -218,6 +218,26 @@ def is_authorized(message: discord.Message, guild_cfg: dict) -> bool:
     return False
 
 
+def _embed_text(message: discord.Message) -> str:
+    """Concatena tutto il testo rilevante degli embed di un messaggio (titolo, descrizione, campi, footer, author)."""
+    parts = []
+    for embed in message.embeds:
+        if embed.title:
+            parts.append(str(embed.title))
+        if embed.description:
+            parts.append(str(embed.description))
+        if embed.footer and embed.footer.text:
+            parts.append(str(embed.footer.text))
+        if embed.author and embed.author.name:
+            parts.append(str(embed.author.name))
+        for field in embed.fields:
+            if field.name:
+                parts.append(str(field.name))
+            if field.value:
+                parts.append(str(field.value))
+    return "\n".join(parts)
+
+
 def has_ping(message: discord.Message) -> bool:
     if message.mention_everyone:
         return True
@@ -225,6 +245,15 @@ def has_ping(message: discord.Message) -> bool:
         return True
     if re.search(r'<@&\d+>', message.content):
         return True
+
+    # Controlla anche dentro gli embed (es. bot giveaway che mettono il tag nell'embed)
+    embed_text = _embed_text(message)
+    if embed_text:
+        if re.search(r'<@&\d+>', embed_text):
+            return True
+        if "@everyone" in embed_text or "@here" in embed_text:
+            return True
+
     return False
 
 
@@ -255,49 +284,56 @@ def record_mention(guild_id: int, role_label: str):
     save_config(cfg)
 
 
+def _extract_mentions(message: discord.Message) -> tuple[list[str], list[int]]:
+    """
+    Restituisce (tags, role_ids) trovati nel content + negli embed del messaggio.
+    tags: lista di stringhe pronte per la visualizzazione ("@everyone", "@here", mention di ruolo).
+    role_ids: lista di ID di ruolo già visti, per evitare duplicati.
+    """
+    full_text = message.content + "\n" + _embed_text(message)
+
+    has_here = "@here" in full_text
+    has_everyone = message.mention_everyone or "@everyone" in full_text
+
+    tags = []
+    if has_here:
+        tags.append("@here")
+    if has_everyone:
+        tags.append("@everyone")
+
+    role_ids_seen = []
+    for role in message.role_mentions:
+        tags.append(role.mention)
+        role_ids_seen.append(role.id)
+    for match in re.finditer(r'<@&(\d+)>', full_text):
+        rid = int(match.group(1))
+        if rid not in role_ids_seen:
+            role_ids_seen.append(rid)
+            tags.append(f"<@&{rid}>")
+
+    return tags, role_ids_seen
+
+
 def build_embed(message: discord.Message) -> discord.Embed:
     author = message.author
     channel = message.channel
 
+    mention_tags, role_ids_seen = _extract_mentions(message)
+
     ping_types = []
-    if message.mention_everyone:
-        if "@here" in message.content:
-            ping_types.append("@here")
-        if "@everyone" in message.content:
-            ping_types.append("@everyone")
-        if not ping_types:
-            ping_types.append("@everyone/@here")
-    for role in message.role_mentions:
-        ping_types.append(f"@{role.name}")
-    mentioned_role_ids = {r.id for r in message.role_mentions}
-    for match in re.finditer(r'<@&(\d+)>', message.content):
-        rid = int(match.group(1))
-        if rid not in mentioned_role_ids:
-            role_obj = message.guild.get_role(rid)
-            name = role_obj.name if role_obj else str(rid)
-            ping_types.append(f"@{name}")
+    for tag in mention_tags:
+        if tag in ("@everyone", "@here"):
+            ping_types.append(tag)
+        else:
+            match = re.match(r'<@&(\d+)>', tag)
+            if match:
+                role_obj = message.guild.get_role(int(match.group(1)))
+                ping_types.append(f"@{role_obj.name}" if role_obj else tag)
 
     ping_label = ", ".join(ping_types) if ping_types else "Role mention"
 
     record_mention(message.guild.id, ping_label)
     weekly_count = count_mentions_this_week(message.guild.id, ping_label)
-
-    # Costruisci la stringa delle menzioni cliccabili
-    mention_tags = []
-    if message.mention_everyone:
-        if "@here" in message.content:
-            mention_tags.append("@here")
-        if "@everyone" in message.content:
-            mention_tags.append("@everyone")
-        if not mention_tags:
-            mention_tags.append("@everyone")
-    for role in message.role_mentions:
-        mention_tags.append(role.mention)
-    mentioned_role_ids = {r.id for r in message.role_mentions}
-    for match in re.finditer(r'<@&(\d+)>', message.content):
-        rid = int(match.group(1))
-        if rid not in mentioned_role_ids:
-            mention_tags.append(f"<@&{rid}>")
 
     mention_str = ", ".join(mention_tags) if mention_tags else ping_label
 
