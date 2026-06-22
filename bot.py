@@ -1918,7 +1918,7 @@ AUTO_ROLE_ID = 1416724423607713883
 # ── Purge ─────────────────────────────────────────────────────────────────────
 
 @bot.command(name="purge")
-async def purge(ctx, amount: int = 10):
+async def purge(ctx, amount: int = 1):
     if ctx.author.id != TICKET_OWNER_ID:
         await ctx.message.delete()
         return
@@ -1927,6 +1927,7 @@ async def purge(ctx, amount: int = 10):
         return
     await ctx.message.delete()
     deleted = await ctx.channel.purge(limit=amount)
+    await ctx.send(f"{len(deleted)} messaggi eliminati", delete_after=3)
 
 
 
