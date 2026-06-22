@@ -1079,6 +1079,22 @@ class GiveawayView(discord.ui.View):
                 "✅ You're in, good luck!", ephemeral=True
             )
 
+        # Aggiorna l'embed pubblico con il nuovo conteggio entries
+        updated_embed = build_giveaway_embed(
+            prize=g["prize"],
+            end_ts=g["end_ts"],
+            winners_count=g["winners_count"],
+            host=g.get("host"),
+            entries=len(participants),
+            image=g.get("image"),
+            thumbnail=g.get("thumbnail"),
+            rules=g.get("rules"),
+        )
+        try:
+            await interaction.message.edit(embed=updated_embed)
+        except discord.HTTPException as e:
+            print(f"⚠️ Impossibile aggiornare embed giveaway: {e}")
+
 
 async def conclude_giveaway(giveaway_id: str, giveaway: dict):
     """Estrae i vincitori, aggiorna l'embed e notifica il canale."""
