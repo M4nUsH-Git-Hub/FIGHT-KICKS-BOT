@@ -2126,6 +2126,43 @@ NOTION_HEADERS  = {
     "Notion-Version": "2022-06-28",
 }
 
+
+@tree.command(name="notiondebug", description="[DEBUG] Mostra lo schema del database visto dall'integrazione Notion")
+async def notion_debug(interaction: discord.Interaction):
+    if interaction.user.id != TICKET_OWNER_ID:
+        await interaction.response.send_message("❌ Non hai i permessi.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    import aiohttp
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{NOTION_API_URL}/databases/{NOTION_DB_ID}",
+            headers=NOTION_HEADERS,
+        ) as resp:
+            data = await resp.json()
+            status = resp.status
+
+    if status != 200:
+        await interaction.followup.send(
+            f"❌ Errore {status} interrogando il database:\n```{data}```",
+            ephemeral=True
+        )
+        return
+
+    props = data.get("properties", {})
+    if not props:
+        await interaction.followup.send("⚠️ Il database esiste ma non ha proprietà visibili.", ephemeral=True)
+        return
+
+    lines = [f"`{name}` → {info.get('type')}" for name, info in props.items()]
+    title = data.get("title", [])
+    title_text = title[0]["plain_text"] if title else "(senza titolo)"
+
+    msg = f"✅ Database trovato: **{title_text}**\nID usato: `{NOTION_DB_ID}`\n\n**Proprietà viste dall'integrazione:**\n" + "\n".join(lines)
+    await interaction.followup.send(msg[:2000], ephemeral=True)
+
 async def notion_get_next_id() -> int:
     """Restituisce il prossimo ID progressivo."""
     import aiohttp
