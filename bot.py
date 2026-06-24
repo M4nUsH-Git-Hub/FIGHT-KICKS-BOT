@@ -566,6 +566,8 @@ Repeated violations will result in disciplinary action!
 *Fight Kicks Staff*"""
 
 
+_processed_ping_ids: set[int] = set()
+
 @bot.event
 async def on_message(message: discord.Message):
     is_self = message.author.id == bot.user.id
@@ -577,13 +579,17 @@ async def on_message(message: discord.Message):
         backup_channel_id = guild_cfg.get("backup_channel_id")
         channel_category_id = message.channel.category_id if message.channel.category_id else None
         if backup_channel_id and message.channel.id != backup_channel_id and has_ping(message) and channel_category_id != EXCLUDED_CATEGORY_ID:
-            backup_channel = message.guild.get_channel(backup_channel_id)
-            if backup_channel:
-                embed = build_embed(message)
-                try:
-                    await backup_channel.send(embed=embed)
-                except (discord.Forbidden, discord.HTTPException) as e:
-                    print(f"⚠️ Errore invio embed: {e}")
+            if message.id not in _processed_ping_ids:
+                _processed_ping_ids.add(message.id)
+                if len(_processed_ping_ids) > 500:
+                    _processed_ping_ids.clear()
+                backup_channel = message.guild.get_channel(backup_channel_id)
+                if backup_channel:
+                    embed = build_embed(message)
+                    try:
+                        await backup_channel.send(embed=embed)
+                    except (discord.Forbidden, discord.HTTPException) as e:
+                        print(f"⚠️ Errore invio embed: {e}")
         return
     if message.guild is None:
         return
@@ -633,6 +639,10 @@ async def on_message(message: discord.Message):
     if backup_channel_id and has_ping(message) and channel_category_id != EXCLUDED_CATEGORY_ID:
         open_channel_ids = guild_cfg.get("open_channel_ids", [])
         if message.channel.id in open_channel_ids or is_authorized(message, guild_cfg):
+            if message.id not in _processed_ping_ids:
+                _processed_ping_ids.add(message.id)
+                if len(_processed_ping_ids) > 500:
+                    _processed_ping_ids.clear()
             backup_channel = message.guild.get_channel(backup_channel_id)
             if backup_channel:
                 embed = build_embed(message)
@@ -2117,51 +2127,14 @@ async def percentuale_cmd(
 # ── Notion Integration ────────────────────────────────────────────────────────
 
 NOTION_TOKEN    = os.environ.get("NOTION_TOKEN")
-NOTION_DB_ID    = "3882595a874480fd8ac9dbc9a6b65db6"
-NOTION_TABLE_URL = "https://app.notion.com/p/3882595a874480fd8ac9dbc9a6b65db6?v=3882595a87448011885a000c19afb40b"
+NOTION_DB_ID    = "22f2595a87448058b766cec9d2bf6919"
+NOTION_TABLE_URL = "https://app.notion.com/p/22f2595a87448058b766cec9d2bf6919?v=22f2595a8744818bb6af000c1b13c281"
 NOTION_API_URL  = "https://api.notion.com/v1"
 NOTION_HEADERS  = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
     "Content-Type": "application/json",
     "Notion-Version": "2022-06-28",
 }
-
-
-@tree.command(name="notiondebug", description="[DEBUG] Mostra lo schema del database visto dall'integrazione Notion")
-async def notion_debug(interaction: discord.Interaction):
-    if interaction.user.id != TICKET_OWNER_ID:
-        await interaction.response.send_message("❌ Non hai i permessi.", ephemeral=True)
-        return
-
-    await interaction.response.defer(ephemeral=True)
-    import aiohttp
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"{NOTION_API_URL}/databases/{NOTION_DB_ID}",
-            headers=NOTION_HEADERS,
-        ) as resp:
-            data = await resp.json()
-            status = resp.status
-
-    if status != 200:
-        await interaction.followup.send(
-            f"❌ Errore {status} interrogando il database:\n```{data}```",
-            ephemeral=True
-        )
-        return
-
-    props = data.get("properties", {})
-    if not props:
-        await interaction.followup.send("⚠️ Il database esiste ma non ha proprietà visibili.", ephemeral=True)
-        return
-
-    lines = [f"`{name}` → {info.get('type')}" for name, info in props.items()]
-    title = data.get("title", [])
-    title_text = title[0]["plain_text"] if title else "(senza titolo)"
-
-    msg = f"✅ Database trovato: **{title_text}**\nID usato: `{NOTION_DB_ID}`\n\n**Proprietà viste dall'integrazione:**\n" + "\n".join(lines)
-    await interaction.followup.send(msg[:2000], ephemeral=True)
 
 async def notion_get_next_id() -> int:
     """Restituisce il prossimo ID progressivo."""
