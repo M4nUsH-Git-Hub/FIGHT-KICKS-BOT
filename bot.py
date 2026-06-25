@@ -2191,7 +2191,7 @@ async def notion_add_order(seller, buyer, model, size, sell, retail, profit, ord
                 return None
 
 
-async def notion_update_tracking(row_id: int, courier: str, tracking: str) -> bool:
+async def notion_update_tracking(row_id: int, tracking: str) -> bool:
     """Aggiorna COURRIER e TRACKING sulla riga con ID specificato."""
     import aiohttp
     # Prima trova il page_id dalla riga con quell'ID
@@ -2216,7 +2216,6 @@ async def notion_update_tracking(row_id: int, courier: str, tracking: str) -> bo
         # Aggiorna la pagina
         update_payload = {
             "properties": {
-                "COURIER":  {"rich_text": [{"text": {"content": courier}}]},
                 "TRACKING": {"rich_text": [{"text": {"content": tracking}}]},
             }
         }
@@ -2285,8 +2284,7 @@ async def notion_cmd(
 @tree.command(name="tracking", description="Aggiorna corriere e tracking di un ordine")
 @app_commands.describe(
     id="ID della riga da aggiornare",
-    courier="Nome del corriere (es. DHL, GLS, BRT)",
-    tracking="Codice tracking"
+    tracking="Tracking link URL",
 )
 async def tracking_cmd(
     interaction: discord.Interaction,
@@ -2300,12 +2298,11 @@ async def tracking_cmd(
 
     await interaction.response.defer(ephemeral=True)
 
-    ok = await notion_update_tracking(id, courier, tracking)
+    ok = await notion_update_tracking(id, tracking)
 
     if ok:
         embed = discord.Embed(title="Tracking updated", color=0x6B6B6B)
         embed.add_field(name="ID",       value=f"`{id}`",       inline=True)
-        embed.add_field(name="Courier",  value=f"`{courier}`",  inline=True)
         embed.add_field(name="Tracking", value=f"`{tracking}`", inline=True)
         embed.set_footer(text="Notion • Fight Kicks", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
 
