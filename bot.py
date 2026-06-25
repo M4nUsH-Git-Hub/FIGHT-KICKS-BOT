@@ -2192,8 +2192,14 @@ async def notion_add_order(seller, buyer, model, size, sell, retail, profit, ord
 
 
 async def notion_update_tracking(row_id: int, tracking: str) -> bool:
-    """Aggiorna COURRIER e TRACKING sulla riga con ID specificato."""
+    """Aggiorna TRACKING (link) sulla riga con ID specificato."""
     import aiohttp
+
+    # Notion richiede un URL valido per il tipo "url"; se manca lo schema, lo aggiungiamo
+    tracking_url = tracking.strip()
+    if tracking_url and not re.match(r'^[a-zA-Z][a-zA-Z0-9+.\-]*://', tracking_url):
+        tracking_url = f"https://{tracking_url}"
+
     # Prima trova il page_id dalla riga con quell'ID
     async with aiohttp.ClientSession() as session:
         payload = {
@@ -2216,7 +2222,7 @@ async def notion_update_tracking(row_id: int, tracking: str) -> bool:
         # Aggiorna la pagina
         update_payload = {
             "properties": {
-                "TRACKING": {"rich_text": [{"text": {"content": tracking}}]},
+                "TRACKING": {"url": tracking_url if tracking_url else None},
             }
         }
         async with session.patch(
@@ -2227,7 +2233,50 @@ async def notion_update_tracking(row_id: int, tracking: str) -> bool:
             return resp.status == 200
 
 
-@tree.command(name="notion", description="Inserisce un nuovo ordine nella tabella Notion")
+class NotionGroup(app_commands.Group):
+    def __init__(self):
+        super().__init__(name="notion", description="Gestione ordini Notion")
+
+
+notion_group = NotionGroup()
+
+
+async def notion_update_status(row_id: int, status: str) -> bool:
+    """Aggiorna STATUS sulla riga con ID specificato."""
+    import aiohttp
+
+    async with aiohttp.ClientSession() as session:
+        payload = {
+            "filter": {
+                "property": "ID",
+                "number": {"equals": row_id}
+            }
+        }
+        async with session.post(
+            f"{NOTION_API_URL}/databases/{NOTION_DB_ID}/query",
+            headers=NOTION_HEADERS,
+            json=payload
+        ) as resp:
+            data = await resp.json()
+            results = data.get("results", [])
+            if not results:
+                return False
+            page_id = results[0]["id"]
+
+        update_payload = {
+            "properties": {
+                "STATUS": {"select": {"name": status}},
+            }
+        }
+        async with session.patch(
+            f"{NOTION_API_URL}/pages/{page_id}",
+            headers=NOTION_HEADERS,
+            json=update_payload
+        ) as resp:
+            return resp.status == 200
+
+
+@notion_group.command(name="order", description="Inserisce un nuovo ordine nella tabella Notion")
 @app_commands.describe(
     seller="Nome del venditore",
     buyer="Nome dell'acquirente",
@@ -2281,15 +2330,14 @@ async def notion_cmd(
         await interaction.followup.send("❌ Errore durante l'inserimento su Notion.", ephemeral=True)
 
 
-@tree.command(name="tracking", description="Aggiorna corriere e tracking di un ordine")
+@notion_group.command(name="tracking", description="Aggiorna il link di tracking di un ordine")
 @app_commands.describe(
     id="ID della riga da aggiornare",
-    tracking="Tracking link URL",
+    tracking="Link di tracking (es. https://www.ups.com/track?...)",
 )
 async def tracking_cmd(
     interaction: discord.Interaction,
     id: int,
-    courier: str,
     tracking: str
 ):
     if interaction.user.id != TICKET_OWNER_ID:
@@ -2303,7 +2351,7 @@ async def tracking_cmd(
     if ok:
         embed = discord.Embed(title="Tracking updated", color=0x6B6B6B)
         embed.add_field(name="ID",       value=f"`{id}`",       inline=True)
-        embed.add_field(name="Tracking", value=f"`{tracking}`", inline=True)
+        embed.add_field(name="Tracking", value=f"[Track]({tracking})", inline=True)
         embed.set_footer(text="Notion • Fight Kicks", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
 
         view = discord.ui.View()
@@ -2313,6 +2361,49 @@ async def tracking_cmd(
         print(f"✅ Notion tracking aggiornato: riga {id}")
     else:
         await interaction.followup.send(f"❌ Riga con ID `{id}` non trovata.", ephemeral=True)
+
+
+@notion_group.command(name="status", description="Aggiorna lo stato di un ordine")
+@app_commands.describe(
+    id="ID della riga da aggiornare",
+    status="Nuovo stato dell'ordine"
+)
+@app_commands.choices(status=[
+    app_commands.Choice(name="Pending", value="PENDING"),
+    app_commands.Choice(name="Shipped", value="SHIPPED"),
+    app_commands.Choice(name="Payout (consegnato, da incassare)", value="PAYOUT"),
+    app_commands.Choice(name="Completed", value="COMPLETED"),
+])
+async def notion_status_cmd(
+    interaction: discord.Interaction,
+    id: int,
+    status: app_commands.Choice[str]
+):
+    if interaction.user.id != TICKET_OWNER_ID:
+        await interaction.response.send_message("❌ Non hai i permessi.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    ok = await notion_update_status(id, status.value)
+
+    if ok:
+        embed = discord.Embed(title="Status updated", color=0x6B6B6B)
+        embed.add_field(name="ID",     value=f"`{id}`",          inline=True)
+        embed.add_field(name="Status", value=f"`{status.value}`", inline=True)
+        embed.set_footer(text="Notion • Fight Kicks", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
+
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Open Table", url=NOTION_TABLE_URL, style=discord.ButtonStyle.link))
+
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        print(f"✅ Notion status aggiornato: riga {id} → {status.value}")
+    else:
+        await interaction.followup.send(f"❌ Riga con ID `{id}` non trovata.", ephemeral=True)
+
+
+tree.add_command(notion_group)
+
 
 # ── Disconnessione e avvio ─────────────────────────────────────────────────────
 
