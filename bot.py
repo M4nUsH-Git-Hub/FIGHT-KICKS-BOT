@@ -2127,8 +2127,8 @@ async def percentuale_cmd(
 # ── Notion Integration ────────────────────────────────────────────────────────
 
 NOTION_TOKEN    = os.environ.get("NOTION_TOKEN")
-NOTION_DB_ID    = "22f2595a87448058b766cec9d2bf6919"
-NOTION_TABLE_URL = "https://app.notion.com/p/22f2595a87448058b766cec9d2bf6919?v=22f2595a8744818bb6af000c1b13c281"
+NOTION_DB_ID    = "3882595a874480fd8ac9dbc9a6b65db6"
+NOTION_TABLE_URL = "https://app.notion.com/p/3882595a874480fd8ac9dbc9a6b65db6?v=3882595a87448011885a000c19afb40b"
 NOTION_API_URL  = "https://api.notion.com/v1"
 NOTION_HEADERS  = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
