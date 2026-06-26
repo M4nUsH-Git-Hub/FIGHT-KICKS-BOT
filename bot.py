@@ -26,6 +26,8 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.j
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 GITHUB_GIST_ID = "6cda801fb93b5515a36bfab543a5d0e1"
 TRANSCRIPT_GIST_ID = "6ca31faba6736a24f456685d0408335a"
+GIVEAWAY_HISTORY_GIST_ID = "55c72e761297a65d901d0f9fad4c4bf5"  # Gist PUBBLICO, letto dal sito di trasparenza
+GIVEAWAY_HISTORY_SITE_URL = "https://fight-kicks-wtb-community.github.io/fight-kicks-wtb-giveaways/"
 
 _config_cache = {}
 
@@ -105,6 +107,59 @@ def save_config(data: dict):
         print(f"⚠️ Gist save fallito ({e}), salvato solo in locale")
 
 
+
+
+def load_giveaway_history() -> list:
+    """Legge lo storico giveaway dal Gist pubblico. Fallback: lista vuota."""
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{GIVEAWAY_HISTORY_GIST_ID}",
+            headers={
+                "Accept": "application/vnd.github+json",
+            },
+            method="GET"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode())
+            files = result.get("files", {})
+            file_key = next((k for k in files if k == "giveaway_history.json"), next(iter(files), None))
+            if not file_key:
+                return []
+            raw = files[file_key]["content"]
+            data = json.loads(raw)
+            return data.get("giveaways", [])
+    except Exception as e:
+        print(f"⚠️ Lettura storico giveaway fallita: {e}")
+        return []
+
+
+def append_giveaway_history(record: dict):
+    """Aggiunge un record allo storico giveaway pubblico e lo salva sul Gist."""
+    try:
+        history = load_giveaway_history()
+        history.append(record)
+        payload = json.dumps({
+            "files": {
+                "giveaway_history.json": {
+                    "content": json.dumps({"giveaways": history}, indent=2, ensure_ascii=False)
+                }
+            }
+        }).encode()
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{GIVEAWAY_HISTORY_GIST_ID}",
+            data=payload,
+            headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+            method="PATCH"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+            print("✅ Storico giveaway aggiornato su Gist pubblico")
+    except Exception as e:
+        print(f"⚠️ Salvataggio storico giveaway fallito: {e}")
 
 
 def save_transcript_to_gist(filename: str, html_content: str) -> str | None:
@@ -724,11 +779,19 @@ WTB_CHANNEL_ID = 1416219889303027722  # ⚠️ Sostituisci con l'ID reale di #wt
 
 FOOTER_ICON_WTB = "https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS/main/SCURO.png"
 
-WTB_SERVER_LINK = "https://discord.gg/2aetYnaNSy"  # ⚠️ Sostituisci con il link reale
+WTB_SERVER_LINK = "https://discord.gg/AdPSHydVdQ"
 
 
 
-@tree.command(name="wtb", description="Posta un annuncio WTB nel canale wtb-monitor")
+class WTBGroup(app_commands.Group):
+    def __init__(self):
+        super().__init__(name="wtb", description="Gestione annunci WTB")
+
+
+wtb_group = WTBGroup()
+
+
+@wtb_group.command(name="monitor", description="Posta un annuncio WTB nel canale wtb-monitor")
 @app_commands.describe(
     nome="Nome del prodotto (es. Air Jordan 4 Retro OG SP Nigel Sylvester)",
     taglia="Taglia EU (es. 43 1/3)",
@@ -796,7 +859,7 @@ WTB_LIST_URL = "https://www.wtbmarketlist.eu/list/734909407825100813"
 WTB_UPDATE_CHANNEL_ID = 1420780972340805754
 
 
-@tree.command(name="wtbupdate", description="Invia la WTB List aggiornata nel canale")
+@wtb_group.command(name="update", description="Invia la WTB List aggiornata nel canale")
 @app_commands.describe(immagine="URL immagine opzionale da allegare all'embed")
 async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
     if interaction.user.id != interaction.guild.owner_id:
@@ -837,6 +900,8 @@ async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
             except (discord.Forbidden, discord.HTTPException) as e:
                 print(f"⚠️ Errore invio backup WTB Update: {e}")
 
+
+tree.add_command(wtb_group)
 
 
 # ── Webhook Manager ───────────────────────────────────────────────────────────
@@ -1133,7 +1198,13 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
         image=giveaway.get("image"),
         thumbnail=giveaway.get("thumbnail"),
     )
-    await message.edit(embed=ended_embed, view=None)
+    verify_view = discord.ui.View()
+    verify_view.add_item(discord.ui.Button(
+        label="Verify on Giveaway Log",
+        url=GIVEAWAY_HISTORY_SITE_URL,
+        style=discord.ButtonStyle.link
+    ))
+    await message.edit(embed=ended_embed, view=verify_view)
 
     if winner_ids:
         mentions = " - ".join(f"<@{wid}>" for wid in winner_ids)
@@ -1144,6 +1215,20 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
         await channel.send(
             f"The giveaway for **{giveaway['prize']}** ended with no valid participants."
         )
+
+    # Registra l'estrazione nello storico pubblico (trasparenza)
+    winner_names = []
+    for wid in winner_ids:
+        member = channel.guild.get_member(wid)
+        winner_names.append(member.display_name if member else f"User {wid}")
+
+    append_giveaway_history({
+        "prize": giveaway["prize"],
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+        "entries": entries,
+        "winners": winner_names,
+        "message_id": str(giveaway["message_id"]),
+    })
 
     giveaways = get_giveaways()
     giveaways.pop(giveaway_id, None)
@@ -1876,9 +1961,9 @@ async def on_member_join(member: discord.Member):
 
     # Mappa codici invito personalizzati
     INVITE_LABELS = {
-        "7qXpwSuPuN": ("`Social`", None),
-        "2aetYnaNSy": ("`Discord`", None),
-        "Vd7C7Wjx3c": ("`Instagram`", None),
+        "7qXpwSuPuN": ("`SERVER`", None),
+        "2aetYnaNSy": ("`INSTAGRAM`", None),
+        "AdPSHydVdQ": ("`WTB`", None),
     }
 
     for inv in new_invites:
