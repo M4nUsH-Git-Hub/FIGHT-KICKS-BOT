@@ -27,7 +27,7 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 GITHUB_GIST_ID = "6cda801fb93b5515a36bfab543a5d0e1"
 TRANSCRIPT_GIST_ID = "6ca31faba6736a24f456685d0408335a"
 GIVEAWAY_HISTORY_GIST_ID = "55c72e761297a65d901d0f9fad4c4bf5"  # Gist PUBBLICO, letto dal sito di trasparenza
-GIVEAWAY_HISTORY_SITE_URL = "https://fight-kicks-wtb-community.github.io/fight-kicks-wtb-giveaways/"
+GIVEAWAY_HISTORY_SITE_URL = "https://fight-kicks-wtb-community.github.io/giveaways/"
 
 _config_cache = {}
 
@@ -160,6 +160,35 @@ def append_giveaway_history(record: dict):
             print("✅ Storico giveaway aggiornato su Gist pubblico")
     except Exception as e:
         print(f"⚠️ Salvataggio storico giveaway fallito: {e}")
+
+
+def reset_giveaway_history():
+    """Azzera lo storico giveaway sul Gist pubblico."""
+    try:
+        payload = json.dumps({
+            "files": {
+                "giveaway_history.json": {
+                    "content": json.dumps({"giveaways": []}, indent=2, ensure_ascii=False)
+                }
+            }
+        }).encode()
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{GIVEAWAY_HISTORY_GIST_ID}",
+            data=payload,
+            headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+            method="PATCH"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+            print("✅ Storico giveaway azzerato su Gist pubblico")
+            return True
+    except Exception as e:
+        print(f"⚠️ Reset storico giveaway fallito: {e}")
+        return False
 
 
 def save_transcript_to_gist(filename: str, html_content: str) -> str | None:
@@ -2024,6 +2053,21 @@ async def on_invite_delete(invite: discord.Invite):
 # ── Auto Role ─────────────────────────────────────────────────────────────────
 
 AUTO_ROLE_ID = 1416724423607713883
+
+
+# ── Reset Giveaway History ─────────────────────────────────────────────────────
+
+@bot.command(name="resethistory")
+async def resethistory(ctx):
+    if ctx.author.id != TICKET_OWNER_ID:
+        await ctx.message.delete()
+        return
+    await ctx.message.delete()
+    ok = reset_giveaway_history()
+    if ok:
+        await ctx.send("Storico giveaway azzerato", delete_after=3)
+    else:
+        await ctx.send("Errore nel reset dello storico", delete_after=5)
 
 
 # ── Purge ─────────────────────────────────────────────────────────────────────
