@@ -2057,8 +2057,8 @@ AUTO_ROLE_ID = 1416724423607713883
 
 # ── Reset Giveaway History ─────────────────────────────────────────────────────
 
-@bot.command(name="resethistory")
-async def resethistory(ctx):
+@bot.command(name="resetgiveawaylogs")
+async def resetgiveawaylogs(ctx):
     if ctx.author.id != TICKET_OWNER_ID:
         await ctx.message.delete()
         return
@@ -2166,6 +2166,7 @@ async def timestamp_cmd(
         return
 
     ts = int(dt.timestamp())
+    reminder_ts = ts - 900  # 15 minuti prima
 
     date_str = dt.strftime("%d/%m/%Y at %H:%M")
 
@@ -2181,7 +2182,7 @@ async def timestamp_cmd(
     )
     embed.add_field(
         name="Remainder",
-        value=f"`{ts}`",
+        value=f"`{reminder_ts}`",
         inline=False
     )
     embed.set_footer(text="Discord Tools", icon_url="https://raw.githubusercontent.com/M4nUsH-Git-Hub/FIGHT-KICKS-LOGO-FOOTER/main/SCURO.png")
