@@ -917,17 +917,8 @@ async def wtbupdate(interaction: discord.Interaction, immagine: str = None):
     await interaction.followup.send("✅ WTB Update inviato!", ephemeral=True)
     print(f"✅ WTB Update inviato | img: {'✅' if immagine else '❌'}")
 
-    # Invia al backup channel se configurato
-    guild_cfg = get_guild_config(interaction.guild.id)
-    backup_channel_id = guild_cfg.get("backup_channel_id")
-    if backup_channel_id:
-        backup_channel = interaction.guild.get_channel(backup_channel_id)
-        if backup_channel:
-            backup_embed = build_embed(sent_msg)
-            try:
-                await backup_channel.send(embed=backup_embed)
-            except (discord.Forbidden, discord.HTTPException) as e:
-                print(f"⚠️ Errore invio backup WTB Update: {e}")
+    # Il backup viene gestito automaticamente da on_message — nessun invio manuale necessario
+    _processed_ping_ids.discard(sent_msg.id)  # assicura che on_message lo processi correttamente
 
 
 tree.add_command(wtb_group)
