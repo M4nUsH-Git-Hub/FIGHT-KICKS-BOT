@@ -1080,14 +1080,10 @@ def build_giveaway_embed(
     ended: bool = False,
     winner_ids: list[int] | None = None,
     rules: str | None = None,
-    image: str | None = None,
-    thumbnail: str | None = None,
 ) -> discord.Embed:
     """
-    host: stringa libera opzionale — mention, testo o link. Se None, il campo non appare.
+    host: stringa libera opzionale — mention, testo o link (es. "amazon.it"). Se None, il campo non appare.
     rules: testo opzionale mostrato nel campo Rules dell'embed attivo.
-    image: URL banner grande mostrato in basso nell'embed (persiste tra gli aggiornamenti).
-    thumbnail: URL immagine piccola mostrata in alto a destra (persiste tra gli aggiornamenti).
     """
     discord_ts = f"<t:{int(end_ts)}:f>"
 
@@ -1122,12 +1118,6 @@ def build_giveaway_embed(
             embed.add_field(name="Host", value=host, inline=False)
 
     embed.set_footer(text=GIVEAWAY_FOOTER, icon_url=GIVEAWAY_ICON)
-    embed.timestamp = datetime.now(timezone.utc)
-
-    if image:
-        embed.set_image(url=image)
-    if thumbnail:
-        embed.set_thumbnail(url=thumbnail)
 
     return embed
 
@@ -1181,8 +1171,6 @@ class GiveawayView(discord.ui.View):
             winners_count=g["winners_count"],
             host=g.get("host"),
             entries=len(participants),
-            image=g.get("image"),
-            thumbnail=g.get("thumbnail"),
             rules=g.get("rules"),
         )
         try:
@@ -1215,12 +1203,10 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
         entries=entries,
         ended=True,
         winner_ids=winner_ids,
-        image=giveaway.get("image"),
-        thumbnail=giveaway.get("thumbnail"),
     )
     verify_view = discord.ui.View()
     verify_view.add_item(discord.ui.Button(
-        label="Verify on Giveaway Log",
+        label="Verify Results",
         url=GIVEAWAY_HISTORY_SITE_URL,
         style=discord.ButtonStyle.link
     ))
@@ -1293,12 +1279,10 @@ async def giveaway_start(
     prize: str,
     duration: str,
     winners: app_commands.Range[int, 1, 20] = 1,
-    hosted: discord.Member = None,
+    hosted: str = None,
     rules: str = None,
     mention: discord.Role = None,
     start: str = None,
-    image: str = None,
-    thumbnail: str = None,
 ):
     if not (
         interaction.user.id == interaction.guild.owner_id
@@ -1340,7 +1324,7 @@ async def giveaway_start(
 
     target_channel = interaction.channel
     end_ts = datetime.now(timezone.utc).timestamp() + delay_seconds + seconds
-    host = hosted.mention if hosted else None
+    host = hosted if hosted else None
 
     embed = build_giveaway_embed(
         prize=prize,
@@ -1349,8 +1333,6 @@ async def giveaway_start(
         host=host,
         entries=0,
         rules=rules,
-        image=image,
-        thumbnail=thumbnail,
     )
 
     if delay_seconds > 0:
@@ -1380,8 +1362,6 @@ async def giveaway_start(
         "winners_count": winners,
         "host": host,
         "rules": rules,
-        "image": image,
-        "thumbnail": thumbnail,
         "participant_ids": [],
     }
     save_giveaways(giveaways)
