@@ -1199,7 +1199,7 @@ async def conclude_giveaway(giveaway_id: str, giveaway: dict):
         prize=giveaway["prize"],
         end_ts=giveaway["end_ts"],
         winners_count=winners_count,
-        host=giveaway["host"],
+        host=giveaway.get("host"),
         entries=entries,
         ended=True,
         winner_ids=winner_ids,
@@ -1268,7 +1268,25 @@ async def giveaway_check():
 
     expired = [gid for gid, g in giveaways.items() if g["end_ts"] <= now]
     for gid in expired:
-        await conclude_giveaway(gid, giveaways[gid])
+        try:
+            await conclude_giveaway(gid, giveaways[gid])
+        except Exception as e:
+            print(f"⚠️ Errore chiusura giveaway {gid}: {e}")
+            # Rimuovi comunque il giveaway per evitare loop infinito di errori
+            try:
+                gws = get_giveaways()
+                gws.pop(gid, None)
+                save_giveaways(gws)
+            except Exception as e2:
+                print(f"⚠️ Errore rimozione giveaway bloccato {gid}: {e2}")
+
+
+@giveaway_check.error
+async def giveaway_check_error(error):
+    print(f"⚠️ giveaway_check task crashato: {error}")
+    # Riavvia automaticamente il task per non perdere futuri controlli
+    if not giveaway_check.is_running():
+        giveaway_check.restart()
 
 
 DEFAULT_GIVEAWAY_ROLE_ID = 1427395632368189521
